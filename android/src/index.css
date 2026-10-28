@@ -1,0 +1,201 @@
+@import "./styles/tokens.css";
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg-cream);
+  color: var(--text-main);
+  font-family: var(--font-family);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: 460px;
+  min-height: 100vh;
+  background-color: var(--bg-cream);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 0 30px rgba(58, 38, 24, 0.08);
+}
+
+@media (max-width: 480px) {
+  #root {
+    max-width: 100%;
+    box-shadow: none;
+  }
+}
+
+.kn {
+  font-family: var(--font-kannada);
+  line-height: 1.65;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+input, select, textarea {
+  font: inherit;
+  color: inherit;
+  border: 1px solid var(--card-border);
+  background: #FFF;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary-terracotta);
+  box-shadow: 0 0 0 3px rgba(184, 78, 47, 0.15);
+}
+
+.clay-card {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: var(--clay-shadow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.clay-card-flat {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  border: 1px solid var(--card-border);
+}
+
+.clay-button-primary {
+  background: linear-gradient(135deg, var(--primary-terracotta), var(--primary-terracotta-dark));
+  color: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 14px 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  box-shadow: var(--clay-shadow-primary);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.clay-button-primary:active {
+  transform: scale(0.98);
+  box-shadow: 0 3px 8px rgba(184, 78, 47, 0.3);
+}
+
+.clay-button-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.clay-button-secondary {
+  background: var(--bg-cream-dark);
+  color: var(--text-main);
+  border-radius: var(--radius-md);
+  padding: 12px 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  border: 1px solid rgba(184, 78, 47, 0.15);
+  box-shadow: var(--clay-shadow-sm);
+  transition: transform 0.12s ease;
+}
+
+.clay-button-secondary:active {
+  transform: scale(0.98);
+  box-shadow: var(--clay-shadow-pressed);
+}
+
+.clay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.clay-badge.success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid rgba(63, 143, 91, 0.2);
+}
+
+.clay-badge.warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid rgba(211, 84, 0, 0.2);
+}
+
+.clay-badge.error {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid rgba(192, 57, 43, 0.2);
+}
+
+.clay-badge.info {
+  background: #EBF5FB;
+  color: #2980B9;
+  border: 1px solid rgba(41, 128, 185, 0.2);
+}
+
+.listen-button {
+  background: var(--accent-marigold-light);
+  color: var(--text-main);
+  border-radius: var(--radius-full);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(246, 185, 59, 0.4);
+  box-shadow: var(--clay-shadow-sm);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.listen-button:active {
+  transform: scale(0.95);
+}
+
+.listen-button.playing {
+  background: var(--accent-marigold);
+  color: #FFFFFF;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

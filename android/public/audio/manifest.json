@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "engine": "web-speech-api-and-prerecorded",
+  "supported_languages": ["en", "kn"],
+  "audio_files": {}
+}

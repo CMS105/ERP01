@@ -8,12 +8,14 @@ from PIL import Image, ImageOps
 MAX_BYTES = 8 * 1024 * 1024  # 8 MB upload limit
 
 CUSTOMER_RE = re.compile(r"\bC\d{5}\b", re.IGNORECASE)
+LOOSE_ID_RE = re.compile(r"\bC[0-9OQDIlSB]{5}\b")
+_FIX = str.maketrans("OQDIlSB", "0001158")
 DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b")
 MODE_RE = re.compile(r"\b(CASH|UPI)\b", re.IGNORECASE)
 AMOUNT_RE = re.compile(r"(?<![\w.])(\d{2,5})(?:\.\d{1,2})?(?![\w])")
 
 
-def available_lang(preferred: str = "eng+kan") -> str:
+def available_lang(preferred: str = "eng") -> str:
     """Use English + Kannada if installed, otherwise English only."""
     installed = set(pytesseract.get_languages(config=""))
     wanted = preferred.split("+")
@@ -83,6 +85,10 @@ def parse_lines(lines):
     for ln in lines:
         text = ln["text"]
         cust = CUSTOMER_RE.search(text)
+        repaired = False
+        if not cust:
+            cust = LOOSE_ID_RE.search(text)
+            repaired = cust is not None
         date = DATE_RE.search(text)
         mode = MODE_RE.search(text)
 
@@ -97,7 +103,8 @@ def parse_lines(lines):
             continue  # headings, noise
 
         row = {
-            "customer_id": cust.group(0).upper() if cust else None,
+            "customer_id": ("C" + cust.group(0)[1:].translate(_FIX)) if cust else None,
+            "id_corrected": repaired,
             "date": _normalise_date(date.group(1)) if date else None,
             "mode": mode.group(1).upper() if mode else None,
             "amount": float(amounts[0]) if amounts else None,
@@ -105,7 +112,8 @@ def parse_lines(lines):
             "line_confidence": ln["conf"],
         }
         row["needs_attention"] = (
-            row["customer_id"] is None or row["amount"] is None or ln["conf"] < 60
+            row["customer_id"] is None or row["amount"] is None
+            or repaired or ln["conf"] < 60
         )
         rows.append(row)
     return rows

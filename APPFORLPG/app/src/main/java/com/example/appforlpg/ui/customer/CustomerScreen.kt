@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -84,9 +85,17 @@ fun CustomerScreen(
     var selectedCylinderType by remember { mutableStateOf("14.2 kg Domestic") }
     var quantity by remember { mutableIntStateOf(1) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var showVoiceTourGuide by remember { mutableStateOf(false) }
 
     val cylinderPrice = if (selectedCylinderType.contains("19 kg")) 1850.0 else 950.0
     val totalAmount = cylinderPrice * quantity
+
+    if (showVoiceTourGuide) {
+        com.example.appforlpg.ui.VoiceTourGuideOverlay(
+            isKannada = isKannada,
+            onDismiss = { showVoiceTourGuide = false }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -106,6 +115,13 @@ fun CustomerScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showVoiceTourGuide = true }) {
+                        Icon(
+                            imageVector = Icons.Default.VolumeUp,
+                            contentDescription = "Voice Guide",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                     IconButton(onClick = { onLanguageToggle(!isKannada) }) {
                         Icon(
                             imageVector = Icons.Default.Language,

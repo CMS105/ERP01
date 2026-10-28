@@ -1,0 +1,74 @@
+{
+  "tour_welcome": {
+    "en": {
+      "file": "audio/en/tour_welcome.mp3",
+      "sha1": "6ec065ee58a2e6e6913ee414ff77985b4285934b",
+      "bytes": 45696
+    },
+    "kn": {
+      "file": "audio/kn/tour_welcome.mp3",
+      "sha1": "16c2a14b986d4ba807bc15f2f7f94ddd567c93ee",
+      "bytes": 68544
+    }
+  },
+  "tour_language": {
+    "en": {
+      "file": "audio/en/tour_language.mp3",
+      "sha1": "a0ffa8577f04322627663b06fbca0f7636f9cb21",
+      "bytes": 41280
+    },
+    "kn": {
+      "file": "audio/kn/tour_language.mp3",
+      "sha1": "8d71d30c918089c966a81a348f2b1a671ec9a16c",
+      "bytes": 44544
+    }
+  },
+  "tour_booking": {
+    "en": {
+      "file": "audio/en/tour_booking.mp3",
+      "sha1": "071e59f6b29e9bf79901fb5dfec4cae82cc45b61",
+      "bytes": 52992
+    },
+    "kn": {
+      "file": "audio/kn/tour_booking.mp3",
+      "sha1": "9fb90022e014953d283b5740baf0c5327ca9c3eb",
+      "bytes": 48000
+    }
+  },
+  "tour_history": {
+    "en": {
+      "file": "audio/en/tour_history.mp3",
+      "sha1": "f3d62c5c4b67ce20c0b022c248e46e66f56ccc9f",
+      "bytes": 52032
+    },
+    "kn": {
+      "file": "audio/kn/tour_history.mp3",
+      "sha1": "adfe83622080fcc9a98b08f910dc69e1ad854ae3",
+      "bytes": 48000
+    }
+  },
+  "tour_support": {
+    "en": {
+      "file": "audio/en/tour_support.mp3",
+      "sha1": "bc4a60d58751690396950b5ea54d95aa9e1b386b",
+      "bytes": 47232
+    },
+    "kn": {
+      "file": "audio/kn/tour_support.mp3",
+      "sha1": "2a740619bff912bfd0eb2d4a7e70c2daa3343d26",
+      "bytes": 52032
+    }
+  },
+  "tour_finish": {
+    "en": {
+      "file": "audio/en/tour_finish.mp3",
+      "sha1": "57476c09643795dc3b404611aa4efcf0391a47ec",
+      "bytes": 38400
+    },
+    "kn": {
+      "file": "audio/kn/tour_finish.mp3",
+      "sha1": "c8d18698f6348743689676b7e0f481ceacfbd31a",
+      "bytes": 37632
+    }
+  }
+}

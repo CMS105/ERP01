@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "voices": {
+    "en": { "lang": "en", "tld": "co.in" },
+    "kn": { "lang": "kn", "tld": "com" }
+  },
+  "items": [
+    {
+      "id": "tour_welcome",
+      "text": {
+        "en": "Welcome to LPG Smart ERP! Let us show you around the portal.",
+        "kn": "ಎಲ್.ಪಿ.ಜಿ ಸ್ಮಾರ್ಟ್ ಈ.ಆರ್.ಪಿ ಆಪ್‌ಗೆ ಸುಸ್ವಾಗತ! ಆಪ್ ಬಳಕೆಯ ಮಾರ್ಗದರ್ಶನ ಇಲ್ಲಿದೆ."
+      }
+    },
+    {
+      "id": "tour_language",
+      "text": {
+        "en": "Tap the globe button at any time to switch between English and Kannada.",
+        "kn": "ಇಂಗ್ಲಿಷ್ ಮತ್ತು ಕನ್ನಡ ಭಾಷೆ ಬದಲಾಯಿಸಲು ಈ ಮೇಲಿನ ಬಟನ್ ಒತ್ತಿ."
+      }
+    },
+    {
+      "id": "tour_booking",
+      "text": {
+        "en": "Choose your cylinder type and quantity, then tap Book Cylinder Now to request a refill.",
+        "kn": "ನಿಮ್ಮ ಸಿಲಿಂಡರ್ ಪ್ರಕಾರ ಆಯ್ಕೆ ಮಾಡಿ, ಸಿಲಿಂಡರ್ ಕಾಯ್ದಿರಿಸಲು ಬಟನ್ ಒತ್ತಿ."
+      }
+    },
+    {
+      "id": "tour_history",
+      "text": {
+        "en": "Track your booking history, delivery execution status, and payment receipts here.",
+        "kn": "ನಿಮ್ಮ ಕಾಯ್ದಿರಿಸುವಿಕೆ ಮತ್ತು ವಿಲೇವಾರಿ ಇತಿಹಾಸವನ್ನು ಇಲ್ಲಿ ಪರಿಶೀಲಿಸಿ."
+      }
+    },
+    {
+      "id": "tour_support",
+      "text": {
+        "en": "Need help? Ask our Gemini AI Assistant or connect with customer support.",
+        "kn": "ಸಹಾಯ ಬೇಕೇ? ನಮ್ಮ ಎಐ ಸಹಾಯಕರನ್ನು ಕೇಳಿ ಅಥವಾ ಬೆಂಬಲ ಪಡೆಯಿರಿ."
+      }
+    },
+    {
+      "id": "tour_finish",
+      "text": {
+        "en": "You are all set! Enjoy using LPG Smart ERP.",
+        "kn": "ನಿಮ್ಮ ಮಾರ್ಗದರ್ಶನ ಪೂರ್ಣಗೊಂಡಿದೆ! ಧನ್ಯವಾದಗಳು."
+      }
+    }
+  ]
+}

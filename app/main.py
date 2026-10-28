@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import Base, engine, SessionLocal, get_db
 from app.models import User, UserRole, CustomerProfile, StaffProfile, Booking, BookingStatus, DeliveryAssignment
 from app.auth import hash_password, get_current_user
-from app.routers import auth, customer, delivery_boy, admin, auditor, reconciliation, chatbot
+from app.routers import auth, customer, delivery_boy, admin, auditor, reconciliation, chatbot, ocr
 from app.schemas import DeliveryTransactionOut
 from app.services import DeliveryConfirmationService
 from app.cache import cache
@@ -116,6 +116,7 @@ app.include_router(admin.router)
 app.include_router(auditor.router)
 app.include_router(reconciliation.router)
 app.include_router(chatbot.router)
+app.include_router(ocr.router)
 
 @app.get("/")
 def health_check():

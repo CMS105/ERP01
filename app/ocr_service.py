@@ -2,8 +2,13 @@ import io
 import re
 from datetime import datetime
 
-import pytesseract
-from PIL import Image, ImageOps
+try:
+    import pytesseract
+    from PIL import Image, ImageOps
+except ImportError:
+    pytesseract = None
+    Image = None
+    ImageOps = None
 
 MAX_BYTES = 8 * 1024 * 1024  # 8 MB upload limit
 
@@ -17,13 +22,20 @@ AMOUNT_RE = re.compile(r"(?<![\w.])(\d{2,5})(?:\.\d{1,2})?(?![\w])")
 
 def available_lang(preferred: str = "eng") -> str:
     """Use English + Kannada if installed, otherwise English only."""
-    installed = set(pytesseract.get_languages(config=""))
-    wanted = preferred.split("+")
-    ok = [l for l in wanted if l in installed]
-    return "+".join(ok) if ok else "eng"
+    if not pytesseract:
+        return "eng"
+    try:
+        installed = set(pytesseract.get_languages(config=""))
+        wanted = preferred.split("+")
+        ok = [l for l in wanted if l in installed]
+        return "+".join(ok) if ok else "eng"
+    except Exception:
+        return "eng"
 
 
-def preprocess(img: Image.Image) -> Image.Image:
+def preprocess(img) -> Any:
+    if not ImageOps:
+        return img
     img = ImageOps.exif_transpose(img)      # fix phone-camera rotation
     img = ImageOps.grayscale(img)
     img = ImageOps.autocontrast(img)
@@ -35,6 +47,8 @@ def preprocess(img: Image.Image) -> Image.Image:
 
 def extract_lines(image_bytes: bytes, lang: str | None = None):
     """Returns (lines, avg_confidence). Each line is {'text', 'conf'}."""
+    if not pytesseract or not Image:
+        raise ValueError("OCR service unavailable: pytesseract/Pillow library not installed on host")
     if len(image_bytes) > MAX_BYTES:
         raise ValueError("Image too large (max 8 MB)")
     try:

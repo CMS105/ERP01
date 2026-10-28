@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LPG-Saarathi Console</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f5f6fa;--card:#fff;--tx:#1b1f2a;--mu:#6a7185;--bd:#e2e5ee;--pr:#e8590c;--prt:#fff;--ok:#2b8a3e;--okb:#e6f4ea;--wr:#b45309;--wrb:#fff4e0;--er:#c92a2a;--erb:#fdeaea}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1220;--card:#171b2d;--tx:#e8eaf3;--mu:#98a0b8;--bd:#2a3050;--pr:#ff8a3d;--prt:#1b1206;--ok:#6fd48a;--okb:#14301e;--wr:#f5b04c;--wrb:#33260e;--er:#ff7b7b;--erb:#3a1818;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1220;--card:#171b2d;--tx:#e8eaf3;--mu:#98a0b8;--bd:#2a3050;--pr:#ff8a3d;--prt:#1b1206;--ok:#6fd48a;--okb:#14301e;--wr:#f5b04c;--wrb:#33260e;--er:#ff7b7b;--erb:#3a1818;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--bd)}
+.logo{font-weight:700;font-size:17px}.logo span{color:var(--pr)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+main{max-width:1000px;margin:0 auto;padding:16px}
+nav{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}
+nav button,.btn{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:7px 12px;border-radius:8px;cursor:pointer;font:inherit;white-space:nowrap}
+nav button.on,.btn.pr{background:var(--pr);color:var(--prt);border-color:var(--pr);font-weight:600}
+.btn.sm{padding:4px 9px;font-size:12px}.btn.er{color:var(--er);border-color:var(--er)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.k{color:var(--mu);font-size:12px}.v{font-size:24px;font-weight:700}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);white-space:nowrap}th{color:var(--mu);font-size:12px;font-weight:600}
+.b{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600}
+.b.ok{background:var(--okb);color:var(--ok)}.b.wr{background:var(--wrb);color:var(--wr)}.b.er{background:var(--erb);color:var(--er)}
+h2{font-size:16px;margin:0 0 10px}.mu{color:var(--mu)}
+select,input{font:inherit;padding:5px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--tx)}
+.login{max-width:380px;margin:12vh auto;text-align:center}.login .btn{display:block;width:100%;margin-top:10px;padding:12px;text-align:left}
+.off{background:var(--wrb);color:var(--wr);padding:8px 12px;border-radius:8px;margin-bottom:12px}
+</style></head><body>
+<div id="app"></div>
+<script>
+const PRICE=903;
+const S={role:null,tab:null,offline:false,toast:'',
+bookings:[
+{id:'B1001',cust:'Ramesh K',vil:'Hosahalli',st:'Delivered'},
+{id:'B1002',cust:'Lakshmi N',vil:'Kadakola',st:'Delivered'},
+{id:'B1003',cust:'Shivanna G',vil:'Hosahalli',st:'Delivered'},
+{id:'B1004',cust:'Meena R',vil:'Bannur',st:'Accepted'},
+{id:'B1005',cust:'Basavaraj T',vil:'Kadakola',st:'Booked'},
+{id:'B1006',cust:'Savitha P',vil:'Bannur',st:'Accepted'},
+{id:'B1007',cust:'Manjunath D',vil:'Hosahalli',st:'Delivered'},
+{id:'B1008',cust:'Lakshmi N',vil:'Kadakola',st:'Delivered'},
+{id:'B1009',cust:'Rukmini S',vil:'Bannur',st:'Booked'}],
+ledger:[
+{id:'L1',b:'B1001',type:'PAYMENT',amt:903,mode:'Cash',by:'Mahesh'},
+{id:'L2',b:'B1002',type:'PAYMENT',amt:903,mode:'UPI',by:'Mahesh'},
+{id:'L3',b:'B1005',type:'PAYMENT',amt:903,mode:'UPI',by:'Counter'},
+{id:'L4',b:'B1007',type:'PAYMENT',amt:850,mode:'Cash',by:'Raju'},
+{id:'L5',b:'B1008',type:'PAYMENT',amt:903,mode:'Cash',by:'Mahesh'}],
+complaints:[
+{id:'C1',cust:'Shivanna G',txt:'Cylinder delivered but staff did not take payment',open:true},
+{id:'C2',cust:'Meena R',txt:'Delivery delayed by 3 days',open:true}]};
+const TABS={Admin:['Overview','Bookings','Complaints','Ledger'],Delivery:['My route'],Auditor:['Reconciliation','Ledger']};
+const $=s=>document.getElementById(s);
+const paid=b=>S.ledger.filter(l=>l.b===b&&!l.pend).reduce((a,l)=>a+l.amt,0);
+function flags(b){const f=[],p=paid(b.id);
+if(b.st==='Delivered'&&p===0)f.push('Delivered but no payment recorded');
+if(b.st!=='Delivered'&&p>0)f.push('Paid but not delivered');
+if(b.st==='Delivered'&&p>0&&p!==PRICE)f.push('Amount mismatch (₹'+p+' vs ₹'+PRICE+')');
+const d=S.bookings.filter(x=>x.cust===b.cust&&x.st==='Delivered');
+if(b.st==='Delivered'&&d.length>1&&d[0].id!==b.id)f.push('Possible duplicate delivery for same customer');
+return f}
+const badge=(t,c)=>`<span class="b ${c}">${t}</span>`;
+const stB=s=>badge(s,s==='Delivered'?'ok':s==='Accepted'?'wr':'er');
+function login(){return `<div class="login card"><div class="logo">LPG-<span>Saarathi</span></div><p class="mu">Staff and admin console. Choose a role to continue (demo).</p>
+<button class="btn" onclick="go('Admin')"><b>Admin</b><br><span class="mu">Monthly updates, complaints, overview</span></button>
+<button class="btn" onclick="go('Delivery')"><b>Delivery staff</b><br><span class="mu">Accept bookings, deliver, collect payment</span></button>
+<button class="btn" onclick="go('Auditor')"><b>Auditor</b><br><span class="mu">Payments and subsidy reconciliation</span></button></div>`}
+function go(r){S.role=r;S.tab=TABS[r][0];draw()}
+function out(){S.role=null;draw()}
+function overview(){const d=S.bookings.filter(b=>b.st==='Delivered').length,
+cash=S.ledger.filter(l=>!l.pend).reduce((a,l)=>a+l.amt,0),fl=S.bookings.filter(b=>flags(b).length).length;
+return `<div class="grid"><div class="card"><div class="k">Bookings</div><div class="v">${S.bookings.length}</div></div>
+<div class="card"><div class="k">Delivered</div><div class="v">${d}</div></div>
+<div class="card"><div class="k">Pending</div><div class="v">${S.bookings.length-d}</div></div>
+<div class="card"><div class="k">Collected</div><div class="v">₹${cash}</div></div>
+<div class="card"><div class="k">Discrepancies</div><div class="v" style="color:var(--er)">${fl}</div></div></div>
+<div class="card"><h2>Monthly update</h2><p class="mu">Push this month's subsidy rate and schedule to all delivery staff.</p>
+<div class="row"><input id="mu" placeholder="Subsidy / cylinder (₹)" value="${PRICE}" inputmode="numeric"><button class="btn pr" onclick="say('Monthly update published to staff')">Publish update</button></div></div>`}
+function bookings(){return `<div class="card tw"><h2>All bookings</h2><table><tr><th>ID</th><th>Customer</th><th>Village</th><th>Status</th></tr>
+${S.bookings.map(b=>`<tr><td>${b.id}</td><td>${b.cust}</td><td>${b.vil}</td><td>${stB(b.st)}</td></tr>`).join('')}</table></div>`}
+function complaints(){return `<div class="card"><h2>Complaints</h2>${S.complaints.map(c=>`<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)"><div><b>${c.cust}</b><div class="mu">${c.txt}</div></div>
+${c.open?`<button class="btn sm pr" onclick="resolve('${c.id}')">Mark resolved</button>`:badge('Resolved','ok')}</div>`).join('')}</div>`}
+function resolve(id){S.complaints.find(c=>c.id===id).open=false;draw()}
+function route(){const q=S.ledger.filter(l=>l.pend).length;
+return `${S.offline?`<div class="off">Offline mode: deliveries are saved on this device (${q} waiting to sync).</div>`:''}
+<div class="card tw"><h2>Today's route</h2><table><tr><th>ID</th><th>Customer</th><th>Village</th><th>Status</th><th>Action</th></tr>
+${S.bookings.filter(b=>b.st!=='Delivered'||S.ledger.some(l=>l.b===b.id&&l.pend)).map(b=>{const pend=S.ledger.some(l=>l.b===b.id&&l.pend);
+return `<tr><td>${b.id}</td><td>${b.cust}</td><td>${b.vil}</td><td>${pend?badge('Pending sync','wr'):stB(b.st)}</td><td>
+${b.st==='Booked'?`<button class="btn sm pr" onclick="accept('${b.id}')">Accept</button>`:''}
+${b.st==='Accepted'?`<select id="m${b.id}"><option>Cash</option><option>UPI</option></select> <button class="btn sm pr" onclick="deliver('${b.id}')">Scan QR &amp; deliver</button>`:''}</td></tr>`}).join('')}</table></div>
+${q&&!S.offline?`<p><button class="btn pr" onclick="sync()">Sync ${q} pending</button></p>`:''}`}
+function accept(id){S.bookings.find(b=>b.id===id).st='Accepted';draw()}
+function deliver(id){const b=S.bookings.find(x=>x.id===id),m=$('m'+id).value;b.st='Delivered';
+S.ledger.push({id:'L'+(S.ledger.length+1),b:id,type:'PAYMENT',amt:PRICE,mode:m,by:'Mahesh',pend:S.offline});
+say(S.offline?'Saved offline. Will sync later.':'Delivery confirmed and payment posted');draw()}
+function sync(){S.ledger.forEach(l=>delete l.pend);say('Synced. Entries posted to the ledger.');draw()}
+function recon(){const rows=S.bookings.map(b=>({b,f:flags(b)}));
+return `<div class="card tw"><div class="row" style="justify-content:space-between"><h2>Reconciliation</h2><button class="btn sm" onclick="csv()">Export CSV</button></div>
+<table><tr><th>ID</th><th>Customer</th><th>Delivered</th><th>Collected</th><th>Expected</th><th>Result</th></tr>
+${rows.map(({b,f})=>`<tr><td>${b.id}</td><td>${b.cust}</td><td>${b.st==='Delivered'?'Yes':'No'}</td><td>₹${paid(b.id)}</td><td>₹${b.st==='Delivered'?PRICE:0}</td>
+<td>${f.length?f.map(x=>badge(x,'er')).join(' '):badge('Matched','ok')}</td></tr>`).join('')}</table></div>`}
+function csv(){const t=['id,customer,delivered,collected,issues'].concat(S.bookings.map(b=>[b.id,b.cust,b.st==='Delivered',paid(b.id),'"'+flags(b).join('; ')+'"'].join(','))).join('\n');
+const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(t);a.download='reconciliation.csv';a.click()}
+function ledger(){const can=S.role==='Admin';
+return `<div class="card tw"><h2>Ledger <span class="mu">(entries cannot be edited, only reversed)</span></h2><table><tr><th>Entry</th><th>Booking</th><th>Type</th><th>Amount</th><th>Mode</th><th>By</th><th></th></tr>
+${S.ledger.map(l=>{const rev=S.ledger.some(r=>r.rev===l.id);
+return `<tr><td>${l.id}</td><td>${l.b}</td><td>${badge(l.type,l.type==='PAYMENT'?'ok':'wr')}</td><td>₹${l.amt}</td><td>${l.mode}</td><td>${l.by}</td>
+<td>${l.type==='PAYMENT'&&!rev&&can&&!l.pend?`<button class="btn sm er" onclick="reverse('${l.id}')">Reverse</button>`:rev?'<span class="mu">Reversed</span>':''}</td></tr>`}).join('')}</table></div>`}
+function reverse(id){const l=S.ledger.find(x=>x.id===id);S.ledger.push({id:'L'+(S.ledger.length+1),b:l.b,type:'REVERSAL',amt:-l.amt,mode:l.mode,by:'Admin',rev:id});say('Reversal entry added. Original is preserved for audit.');draw()}
+function say(t){S.toast=t;draw();setTimeout(()=>{S.toast='';draw()},2200)}
+const VIEW={'Overview':overview,'Bookings':bookings,'Complaints':complaints,'Ledger':ledger,'My route':route,'Reconciliation':recon};
+function draw(){const a=$('app');if(!S.role){a.innerHTML=login();return}
+a.innerHTML=`<header><div class="logo">LPG-<span>Saarathi</span> <span class="mu" style="font-weight:400">· ${S.role}</span></div><div class="row">
+${S.role==='Delivery'?`<label class="row"><input type="checkbox" ${S.offline?'checked':''} onchange="S.offline=this.checked;draw()"> Offline</label>`:''}
+<button class="btn sm" onclick="out()">Switch role</button></div></header>
+<main><nav>${TABS[S.role].map(t=>`<button class="${t===S.tab?'on':''}" onclick="S.tab='${t}';draw()">${t}</button>`).join('')}</nav>
+${S.toast?`<div class="off" style="background:var(--okb);color:var(--ok)">${S.toast}</div>`:''}${VIEW[S.tab]()}</main>`}
+draw();
+</script></body></html>

@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from app.database import Base, engine
 from app.routers import auth, customer, delivery_boy, admin, auditor, reconciliation
 
+from app import ocr_models  # noqa: F401  (registers ocr_scans table)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -25,6 +26,8 @@ app.include_router(delivery_boy.router)
 app.include_router(admin.router)
 app.include_router(auditor.router)
 app.include_router(reconciliation.router)
+from app.routers import ocr as ocr_router
+app.include_router(ocr_router.router)
 
 @app.get("/")
 def health_check():

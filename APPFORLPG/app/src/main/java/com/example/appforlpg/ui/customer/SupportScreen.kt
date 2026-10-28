@@ -182,14 +182,13 @@ fun SupportScreen(
         Spacer(modifier = Modifier.height(6.dp))
 
         // Chat Conversation Stream
-        LazyColumn(
-            state = listState,
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(chatList) { msg ->
+            chatList.forEach { msg ->
                 if (msg.isUser) {
                     UserBubble(text = msg.text)
                 } else {
@@ -204,19 +203,17 @@ fun SupportScreen(
             }
 
             if (isThinking) {
-                item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(8.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isKannada) "ಎಐ ಉತ್ತರ ತಯಾರಿಸುತ್ತಿದೆ..." else "Gemini AI is generating response...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(8.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isKannada) "ಎಐ ಉತ್ತರ ತಯಾರಿಸುತ್ತಿದೆ..." else "Gemini AI is generating response...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }

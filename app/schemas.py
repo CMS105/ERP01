@@ -1,7 +1,10 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, ConfigDict
-from app.models import UserRole, BookingStatus, DeliveryOutcome, PaymentStatus, PaymentMethod, CylinderStatus
+from app.models import (
+    UserRole, BookingStatus, DeliveryOutcome, PaymentStatus,
+    PaymentMethod, CylinderStatus, FindingReviewStatus, FindingSeverity
+)
 
 class Token(BaseModel):
     access_token: str
@@ -269,3 +272,56 @@ class FinancialSummaryOut(BaseModel):
     collections_by_method: dict
     total_corrections_count: int
     net_correction_variance: float
+
+class ReconciliationRunOut(BaseModel):
+    id: int
+    run_id: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    status: str
+    triggered_by_user_id: Optional[int] = None
+    records_examined: int
+    findings_count: int
+    summary_json: Optional[str] = None
+    error_message: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ReconciliationFindingOut(BaseModel):
+    id: int
+    finding_id: str
+    run_id: str
+    rule_code: str
+    severity: str
+    affected_table: str
+    affected_record_id: str
+    explanation: str
+    detected_at: datetime
+    review_status: str
+    reviewed_by_user_id: Optional[int] = None
+    reviewed_at: Optional[datetime] = None
+    review_reason: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class FindingReviewRequest(BaseModel):
+    review_status: FindingReviewStatus
+    reason: str
+
+class PaginatedFindingsOut(BaseModel):
+    total: int
+    page: int
+    limit: int
+    items: List[ReconciliationFindingOut]
+
+class ReconciliationSummaryOut(BaseModel):
+    total_runs: int
+    last_run_at: Optional[datetime] = None
+    last_run_status: Optional[str] = None
+    total_findings: int
+    pending_findings: int
+    reviewed_findings: int
+    resolved_findings: int
+    dismissed_findings: int
+    by_rule: Dict[str, int]
+    by_severity: Dict[str, int]

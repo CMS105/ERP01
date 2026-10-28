@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LPG-Saarathi Console</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f5f6fa;--card:#fff;--tx:#1b1f2a;--mu:#6a7185;--bd:#e2e5ee;--pr:#e8590c;--prt:#fff;--ok:#2b8a3e;--okb:#e6f4ea;--wr:#b45309;--wrb:#fff4e0;--er:#c92a2a;--erb:#fdeaea}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1220;--card:#171b2d;--tx:#e8eaf3;--mu:#98a0b8;--bd:#2a3050;--pr:#ff8a3d;--prt:#1b1206;--ok:#6fd48a;--okb:#14301e;--wr:#f5b04c;--wrb:#33260e;--er:#ff7b7b;--erb:#3a1818;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1220;--card:#171b2d;--tx:#e8eaf3;--mu:#98a0b8;--bd:#2a3050;--pr:#ff8a3d;--prt:#1b1206;--ok:#6fd48a;--okb:#14301e;--wr:#f5b04c;--wrb:#33260e;--er:#ff7b7b;--erb:#3a1818;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--bd)}
+.logo{font-weight:700;font-size:17px}.logo span{color:var(--pr)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+main{max-width:1100px;margin:0 auto;padding:16px}
+nav{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}
+nav button,.btn{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:7px 12px;border-radius:8px;cursor:pointer;font:inherit;white-space:nowrap}
+nav button.on,.btn.pr{background:var(--pr);color:var(--prt);border-color:var(--pr);font-weight:600}
+.btn.sm{padding:4px 9px;font-size:12px}.btn.er{color:var(--er);border-color:var(--er)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+.k{color:var(--mu);font-size:12px}.v{font-size:22px;font-weight:700}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);white-space:nowrap}th{color:var(--mu);font-size:12px;font-weight:600}
+.b{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.b.ok{background:var(--okb);color:var(--ok)}.b.wr{background:var(--wrb);color:var(--wr)}.b.er{background:var(--erb);color:var(--er)}
+h2{font-size:16px;margin:0 0 10px}.mu{color:var(--mu)}
+select,input{font:inherit;padding:5px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--tx)}
+.login{max-width:380px;margin:12vh auto;text-align:center}.login .btn{display:block;width:100%;margin-top:10px;padding:12px;text-align:left}
+.off{background:var(--wrb);color:var(--wr);padding:8px 12px;border-radius:8px;margin-bottom:12px}
+</style></head><body>
+<div id="app"></div>
+<script>
+const API_BASE = "";
+const PRICE=903;
+const S={
+  role:null,token:null,tab:null,offline:false,toast:'',
+  reconSummary:null,reconFindings:[],reconTotal:0,reconPage:1,reconLimit:15,
+  reconRuns:[],reconRuleFilter:'',reconStatusFilter:'',reconSearch:'',
+  bookings:[
+    {id:'B1001',cust:'Ramesh K',vil:'Hosahalli',st:'Delivered'},
+    {id:'B1002',cust:'Lakshmi N',vil:'Kadakola',st:'Delivered'},
+    {id:'B1003',cust:'Shivanna G',vil:'Hosahalli',st:'Delivered'},
+    {id:'B1004',cust:'Meena R',vil:'Bannur',st:'Accepted'},
+    {id:'B1005',cust:'Basavaraj T',vil:'Kadakola',st:'Booked'},
+    {id:'B1006',cust:'Savitha P',vil:'Bannur',st:'Accepted'},
+    {id:'B1007',cust:'Manjunath D',vil:'Hosahalli',st:'Delivered'},
+    {id:'B1008',cust:'Lakshmi N',vil:'Kadakola',st:'Delivered'},
+    {id:'B1009',cust:'Rukmini S',vil:'Bannur',st:'Booked'}
+  ],
+  ledger:[
+    {id:'L1',b:'B1001',type:'PAYMENT',amt:903,mode:'Cash',by:'Mahesh'},
+    {id:'L2',b:'B1002',type:'PAYMENT',amt:903,mode:'UPI',by:'Mahesh'},
+    {id:'L3',b:'B1005',type:'PAYMENT',amt:903,mode:'UPI',by:'Counter'},
+    {id:'L4',b:'B1007',type:'PAYMENT',amt:850,mode:'Cash',by:'Raju'},
+    {id:'L5',b:'B1008',type:'PAYMENT',amt:903,mode:'Cash',by:'Mahesh'}
+  ],
+  complaints:[
+    {id:'C1',cust:'Shivanna G',txt:'Cylinder delivered but staff did not take payment',open:true},
+    {id:'C2',cust:'Meena R',txt:'Delivery delayed by 3 days',open:true}
+  ]
+};
+
+const TABS={
+  Admin:['Overview','Reconciliation','Bookings','Complaints','Ledger'],
+  Delivery:['My route'],
+  Auditor:['Reconciliation','Ledger']
+};
+
+const $=s=>document.getElementById(s);
+const badge=(t,c)=>`<span class="b ${c}">${t}</span>`;
+const stB=s=>badge(s,s==='Delivered'?'ok':s==='Accepted'?'wr':'er');
+const sevB=s=>badge(s,s==='CRITICAL'?'er':s==='HIGH'?'wr':'ok');
+
+async function api(path, opt={}){
+  const headers = opt.headers || {};
+  if(S.token){
+    headers['Authorization'] = 'Bearer ' + S.token;
+  }
+  if(opt.body && typeof opt.body==='object'){
+    headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(opt.body);
+  }
+  opt.headers = headers;
+  try{
+    const res = await fetch(API_BASE + path, opt);
+    if(!res.ok){
+      const err = await res.json().catch(()=>({detail:'API Error'}));
+      throw new Error(err.detail || 'Request failed');
+    }
+    return await res.json();
+  }catch(e){
+    say(e.message);
+    throw e;
+  }
+}
+
+async function loginUser(role){
+  let email = "admin@example.com", pwd = "AdminPass123!";
+  if(role==='Auditor'){ email = "auditor@example.com"; pwd = "AuditorPass123!"; }
+  if(role==='Delivery'){ email = "driver1@example.com"; pwd = "Pass123!"; }
+  try{
+    const res = await api('/api/v1/auth/login', {
+      method: 'POST',
+      body: { email: email, password: pwd }
+    });
+    S.token = res.access_token;
+    S.role = role;
+    S.tab = TABS[role][0];
+    if(S.tab === 'Reconciliation'){
+      await loadReconData();
+    }
+    draw();
+  }catch(e){
+    S.role = role;
+    S.tab = TABS[role][0];
+    draw();
+  }
+}
+
+async function loadReconData(){
+  try{
+    const [summary, runs, findings] = await Promise.all([
+      api('/api/v1/reconciliation/summary'),
+      api('/api/v1/reconciliation/runs?limit=10'),
+      api(`/api/v1/reconciliation/findings?page=${S.reconPage}&limit=${S.reconLimit}&rule_code=${encodeURIComponent(S.reconRuleFilter)}&review_status=${encodeURIComponent(S.reconStatusFilter)}&search=${encodeURIComponent(S.reconSearch)}`)
+    ]);
+    S.reconSummary = summary;
+    S.reconRuns = runs;
+    S.reconFindings = findings.items;
+    S.reconTotal = findings.total;
+  }catch(e){
+  }
+}
+
+async function triggerRecon(){
+  try{
+    say("Running reconciliation engine on PostgreSQL...");
+    await api('/api/v1/reconciliation/run', { method: 'POST' });
+    say("Reconciliation completed successfully");
+    await loadReconData();
+    draw();
+  }catch(e){
+    say("Failed: " + e.message);
+  }
+}
+
+async function reviewFinding(findingId, status){
+  const reason = prompt(`Enter reason for marking as ${status}:`, `Standard audit review - verified`);
+  if(!reason) return;
+  try{
+    await api(`/api/v1/reconciliation/findings/${findingId}/review`, {
+      method: 'PUT',
+      body: { review_status: status, reason: reason }
+    });
+    say(`Finding ${findingId} marked as ${status}`);
+    await loadReconData();
+    draw();
+  }catch(e){
+    say("Review failed: " + e.message);
+  }
+}
+
+function login(){
+  return `<div class="login card"><div class="logo">LPG-<span>Saarathi</span></div><p class="mu">Staff and admin console. Authenticate role to connect to PostgreSQL backend.</p>
+<button class="btn" onclick="loginUser('Admin')"><b>Admin</b><br><span class="mu">Reconciliation, users, inventory, operational overview</span></button>
+<button class="btn" onclick="loginUser('Auditor')"><b>Auditor</b><br><span class="mu">Read-only reconciliation, discrepancy evidence & logs</span></button>
+<button class="btn" onclick="loginUser('Delivery')"><b>Delivery Staff</b><br><span class="mu">Route, delivery confirmations, offline sync</span></button></div>`;
+}
+
+function out(){
+  S.role = null;
+  S.token = null;
+  draw();
+}
+
+function overview(){
+  const d=S.bookings.filter(b=>b.st==='Delivered').length,
+  cash=S.ledger.filter(l=>!l.pend).reduce((a,l)=>a+l.amt,0),fl=S.bookings.filter(b=>flags(b).length).length;
+  return `<div class="grid"><div class="card"><div class="k">Bookings</div><div class="v">${S.bookings.length}</div></div>
+<div class="card"><div class="k">Delivered</div><div class="v">${d}</div></div>
+<div class="card"><div class="k">Pending</div><div class="v">${S.bookings.length-d}</div></div>
+<div class="card"><div class="k">Collected</div><div class="v">₹${cash}</div></div>
+<div class="card"><div class="k">Discrepancies</div><div class="v" style="color:var(--er)">${fl}</div></div></div>
+<div class="card"><h2>Monthly update</h2><p class="mu">Push this month's subsidy rate and schedule to all delivery staff.</p>
+<div class="row"><input id="mu" placeholder="Subsidy / cylinder (₹)" value="${PRICE}" inputmode="numeric"><button class="btn pr" onclick="say('Monthly update published to staff')">Publish update</button></div></div>`;
+}
+
+function bookings(){
+  return `<div class="card tw"><h2>All bookings</h2><table><tr><th>ID</th><th>Customer</th><th>Village</th><th>Status</th></tr>
+${S.bookings.map(b=>`<tr><td>${b.id}</td><td>${b.cust}</td><td>${b.vil}</td><td>${stB(b.st)}</td></tr>`).join('')}</table></div>`;
+}
+
+function complaints(){
+  return `<div class="card"><h2>Complaints</h2>${S.complaints.map(c=>`<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)"><div><b>${c.cust}</b><div class="mu">${c.txt}</div></div>
+${c.open?`<button class="btn sm pr" onclick="resolve('${c.id}')">Mark resolved</button>`:badge('Resolved','ok')}</div>`).join('')}</div>`;
+}
+
+function resolve(id){S.complaints.find(c=>c.id===id).open=false;draw()}
+
+function route(){
+  const q=S.ledger.filter(l=>l.pend).length;
+  return `${S.offline?`<div class="off">Offline mode: deliveries are saved on this device (${q} waiting to sync).</div>`:''}
+<div class="card tw"><h2>Today's route</h2><table><tr><th>ID</th><th>Customer</th><th>Village</th><th>Status</th><th>Action</th></tr>
+${S.bookings.filter(b=>b.st!=='Delivered'||S.ledger.some(l=>l.b===b.id&&l.pend)).map(b=>{const pend=S.ledger.some(l=>l.b===b.id&&l.pend);
+return `<tr><td>${b.id}</td><td>${b.cust}</td><td>${b.vil}</td><td>${pend?badge('Pending sync','wr'):stB(b.st)}</td><td>
+${b.st==='Booked'?`<button class="btn sm pr" onclick="accept('${b.id}')">Accept</button>`:''}
+${b.st==='Accepted'?`<select id="m${b.id}"><option>Cash</option><option>UPI</option></select> <button class="btn sm pr" onclick="deliver('${b.id}')">Scan QR &amp; deliver</button>`:''}</td></tr>`}).join('')}</table></div>
+${q&&!S.offline?`<p><button class="btn pr" onclick="sync()">Sync ${q} pending</button></p>`:''}`;
+}
+
+function accept(id){S.bookings.find(b=>b.id===id).st='Accepted';draw()}
+function deliver(id){
+  const b=S.bookings.find(x=>x.id===id),m=$('m'+id).value;b.st='Delivered';
+  S.ledger.push({id:'L'+(S.ledger.length+1),b:id,type:'PAYMENT',amt:PRICE,mode:m,by:'Mahesh',pend:S.offline});
+  say(S.offline?'Saved offline. Will sync later.':'Delivery confirmed and payment posted');draw();
+}
+function sync(){S.ledger.forEach(l=>delete l.pend);say('Synced. Entries posted to the ledger.');draw()}
+
+function recon(){
+  const sm = S.reconSummary || {
+    total_findings:0, pending_findings:0, resolved_findings:0, dismissed_findings:0,
+    by_rule:{}, by_severity:{}
+  };
+  const isAdmin = S.role === 'Admin';
+
+  return `<div class="row" style="justify-content:space-between;margin-bottom:12px">
+<h2>Reconciliation Engine</h2>
+<div class="row">
+${isAdmin?`<button class="btn pr sm" onclick="triggerRecon()">Run Reconciliation</button>`:''}
+<button class="btn sm" onclick="loadReconData().then(draw)">Refresh</button>
+</div>
+</div>
+
+<div class="grid">
+<div class="card"><div class="k">Total Flagged</div><div class="v">${sm.total_findings}</div></div>
+<div class="card"><div class="k">Pending Review</div><div class="v" style="color:var(--er)">${sm.pending_findings}</div></div>
+<div class="card"><div class="k">Resolved</div><div class="v" style="color:var(--ok)">${sm.resolved_findings}</div></div>
+<div class="card"><div class="k">Dismissed</div><div class="v" style="color:var(--mu)">${sm.dismissed_findings}</div></div>
+</div>
+
+<div class="card">
+<div class="row" style="justify-content:space-between;margin-bottom:10px">
+<b>Flagged Records</b>
+<div class="row">
+<input type="text" placeholder="Search record..." value="${S.reconSearch}" onchange="S.reconSearch=this.value;S.reconPage=1;loadReconData().then(draw)">
+<select onchange="S.reconRuleFilter=this.value;S.reconPage=1;loadReconData().then(draw)">
+<option value="">All Rules</option>
+<option value="DUPLICATE_BOOKING" ${S.reconRuleFilter==='DUPLICATE_BOOKING'?'selected':''}>Duplicate Booking</option>
+<option value="DELIVERY_NO_PAYMENT" ${S.reconRuleFilter==='DELIVERY_NO_PAYMENT'?'selected':''}>Delivery No Payment</option>
+<option value="DUPLICATE_PAYMENT" ${S.reconRuleFilter==='DUPLICATE_PAYMENT'?'selected':''}>Duplicate Payment</option>
+<option value="AMOUNT_MISMATCH" ${S.reconRuleFilter==='AMOUNT_MISMATCH'?'selected':''}>Amount Mismatch</option>
+<option value="MISSING_EMPTY_RETURN" ${S.reconRuleFilter==='MISSING_EMPTY_RETURN'?'selected':''}>Missing Empty Return</option>
+<option value="SUBSIDY_INELIGIBLE" ${S.reconRuleFilter==='SUBSIDY_INELIGIBLE'?'selected':''}>Subsidy Ineligible</option>
+</select>
+<select onchange="S.reconStatusFilter=this.value;S.reconPage=1;loadReconData().then(draw)">
+<option value="">All Statuses</option>
+<option value="PENDING" ${S.reconStatusFilter==='PENDING'?'selected':''}>Pending</option>
+<option value="REVIEWED" ${S.reconStatusFilter==='REVIEWED'?'selected':''}>Reviewed</option>
+<option value="RESOLVED" ${S.reconStatusFilter==='RESOLVED'?'selected':''}>Resolved</option>
+<option value="DISMISSED" ${S.reconStatusFilter==='DISMISSED'?'selected':''}>Dismissed</option>
+</select>
+</div>
+</div>
+
+<div class="tw">
+<table>
+<tr><th>Finding ID</th><th>Rule</th><th>Severity</th><th>Affected Table &amp; ID</th><th>Explanation</th><th>Status</th>${isAdmin?'<th>Action</th>':''}</tr>
+${S.reconFindings.length===0?'<tr><td colspan="7" class="mu" style="text-align:center;padding:16px">No findings match current filters. Trigger reconciliation to examine database.</td></tr>':''}
+${S.reconFindings.map(f=>`<tr>
+<td><code>${f.finding_id}</code></td>
+<td><b>${f.rule_code}</b></td>
+<td>${sevB(f.severity)}</td>
+<td>${f.affected_table} · <code>${f.affected_record_id}</code></td>
+<td>${f.explanation}</td>
+<td>${badge(f.review_status, f.review_status==='RESOLVED'?'ok':f.review_status==='DISMISSED'?'mu':'er')}</td>
+${isAdmin?`<td>
+${f.review_status==='PENDING'?`
+<button class="btn sm" onclick="reviewFinding('${f.finding_id}','REVIEWED')">Review</button>
+<button class="btn sm pr" onclick="reviewFinding('${f.finding_id}','RESOLVED')">Resolve</button>
+<button class="btn sm er" onclick="reviewFinding('${f.finding_id}','DISMISSED')">Dismiss</button>
+`:`<span class="mu">${f.review_status}</span>`}
+</td>`:''}
+</tr>`).join('')}
+</table>
+</div>
+
+<div class="row" style="justify-content:space-between;margin-top:10px">
+<span class="mu">Total: ${S.reconTotal} records (Page ${S.reconPage} of ${Math.ceil(S.reconTotal/S.reconLimit)||1})</span>
+<div class="row">
+<button class="btn sm" ${S.reconPage<=1?'disabled':''} onclick="S.reconPage--;loadReconData().then(draw)">Prev</button>
+<button class="btn sm" ${S.reconPage*S.reconLimit>=S.reconTotal?'disabled':''} onclick="S.reconPage++;loadReconData().then(draw)">Next</button>
+</div>
+</div>
+</div>
+
+<div class="card tw">
+<h2>Execution Runs</h2>
+<table>
+<tr><th>Run ID</th><th>Started At</th><th>Completed At</th><th>Status</th><th>Examined</th><th>Findings</th></tr>
+${S.reconRuns.length===0?'<tr><td colspan="6" class="mu" style="text-align:center;padding:14px">No previous execution runs.</td></tr>':''}
+${S.reconRuns.map(r=>`<tr>
+<td><code>${r.run_id}</code></td>
+<td>${r.started_at ? new Date(r.started_at).toLocaleString() : '-'}</td>
+<td>${r.completed_at ? new Date(r.completed_at).toLocaleString() : '-'}</td>
+<td>${badge(r.status, r.status==='COMPLETED'?'ok':r.status==='RUNNING'?'wr':'er')}</td>
+<td>${r.records_examined}</td>
+<td><b>${r.findings_count}</b></td>
+</tr>`).join('')}
+</table>
+</div>`;
+}
+
+function ledger(){
+  const can=S.role==='Admin';
+  return `<div class="card tw"><h2>Ledger <span class="mu">(entries cannot be edited, only reversed)</span></h2><table><tr><th>Entry</th><th>Booking</th><th>Type</th><th>Amount</th><th>Mode</th><th>By</th><th></th></tr>
+${S.ledger.map(l=>{const rev=S.ledger.some(r=>r.rev===l.id);
+return `<tr><td>${l.id}</td><td>${l.b}</td><td>${badge(l.type,l.type==='PAYMENT'?'ok':'wr')}</td><td>₹${l.amt}</td><td>${l.mode}</td><td>${l.by}</td>
+<td>${l.type==='PAYMENT'&&!rev&&can&&!l.pend?`<button class="btn sm er" onclick="reverse('${l.id}')">Reverse</button>`:rev?'<span class="mu">Reversed</span>':''}</td></tr>`}).join('')}</table></div>`;
+}
+
+function reverse(id){
+  const l=S.ledger.find(x=>x.id===id);
+  S.ledger.push({id:'L'+(S.ledger.length+1),b:l.b,type:'REVERSAL',amt:-l.amt,mode:l.mode,by:'Admin',rev:id});
+  say('Reversal entry added. Original is preserved for audit.');draw();
+}
+
+function say(t){S.toast=t;draw();setTimeout(()=>{S.toast='';draw()},2500)}
+
+const VIEW={'Overview':overview,'Bookings':bookings,'Complaints':complaints,'Ledger':ledger,'My route':route,'Reconciliation':recon};
+
+function draw(){
+  const a=$('app');
+  if(!S.role){a.innerHTML=login();return}
+  a.innerHTML=`<header><div class="logo">LPG-<span>Saarathi</span> <span class="mu" style="font-weight:400">· ${S.role}</span></div><div class="row">
+${S.role==='Delivery'?`<label class="row"><input type="checkbox" ${S.offline?'checked':''} onchange="S.offline=this.checked;draw()"> Offline</label>`:''}
+<button class="btn sm" onclick="out()">Switch role</button></div></header>
+<main><nav>${TABS[S.role].map(t=>`<button class="${t===S.tab?'on':''}" onclick="S.tab='${t}';if(t==='Reconciliation'){loadReconData().then(draw)}else{draw()}">${t}</button>`).join('')}</nav>
+${S.toast?`<div class="off" style="background:var(--okb);color:var(--ok)">${S.toast}</div>`:''}${VIEW[S.tab]()}</main>`;
+}
+
+draw();
+</script></body></html>

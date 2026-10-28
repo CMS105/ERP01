@@ -1,13 +1,13 @@
-# LPG ERP Backend Architecture
+# LPG ERP Backend & Reconciliation Engine
 
-Backend architecture for LPG Enterprise Resource Planning supporting four distinct user roles, backend-enforced role-based access control (RBAC), and offline-tolerant operations.
+Enterprise Resource Planning backend architecture for LPG cylinder operations with four-role backend RBAC, offline synchronization, and an integrated PostgreSQL reconciliation engine.
 
 ## Architecture & Clients
 
 - **Customer (Android App)**: Bookings, profile, deliveries tracking, and payment history.
 - **Delivery Boy (Android App)**: Assigned deliveries, outcome logging, payment collection, and offline batch sync.
-- **Admin (Web Dashboard)**: User management, customer oversight, inventory control, assignments, operational overview, and audited financial corrections.
-- **Auditor (Web Dashboard)**: Strictly read-only access to reconciliation reports, discrepancy evidence, financial summaries, and immutable audit logs.
+- **Admin (Web Dashboard)**: User management, customer oversight, inventory control, assignments, operational overview, audited financial corrections, and triggering reconciliation.
+- **Auditor (Web Dashboard)**: Strictly read-only access to reconciliation reports, flagged records, discrepancy evidence, financial summaries, and immutable audit logs.
 
 ```
                     +---------------------------+
@@ -27,6 +27,11 @@ Backend architecture for LPG Enterprise Resource Planning supporting four distin
      +-----------------+----------+----------+-----------------+
                                   |
                     +-------------+-------------+
+                    |   Reconciliation Engine   |
+                    |   6 Database Rules (SQL)  |
+                    +-------------+-------------+
+                                  |
+                    +-------------+-------------+
                     | Shared Services & Models  |
                     | (Audit Logs & Corrections)|
                     +-------------+-------------+
@@ -35,6 +40,17 @@ Backend architecture for LPG Enterprise Resource Planning supporting four distin
                     |   PostgreSQL / SQLite     |
                     +---------------------------+
 ```
+
+## Reconciliation Rules
+
+The engine detects discrepancies directly from PostgreSQL database models:
+
+1. **`DUPLICATE_BOOKING`**: Flags multiple bookings made for the same customer on the same booking date (keeps first, flags subsequent duplicates).
+2. **`DELIVERY_NO_PAYMENT`**: Flags completed cylinder deliveries that have no matching payment record in the ledger.
+3. **`DUPLICATE_PAYMENT`**: Flags deliveries where more than one payment collection has been recorded.
+4. **`AMOUNT_MISMATCH`**: Flags deliveries where the collected payment amount does not match the delivery amount due.
+5. **`MISSING_EMPTY_RETURN`**: Flags deliveries where a full cylinder was dispatched OUT, but no empty cylinder was received IN.
+6. **`SUBSIDY_INELIGIBLE`**: Flags subsidy credits disbursed to customers marked as ineligible or inactive.
 
 ## Directory Structure
 
@@ -47,6 +63,8 @@ Backend architecture for LPG Enterprise Resource Planning supporting four distin
 │   ├── schemas.py
 │   ├── auth.py
 │   ├── services.py
+│   ├── reconciliation.py
+│   ├── data_loader.py
 │   ├── main.py
 │   └── routers/
 │       ├── __init__.py
@@ -54,7 +72,8 @@ Backend architecture for LPG Enterprise Resource Planning supporting four distin
 │       ├── customer.py
 │       ├── delivery_boy.py
 │       ├── admin.py
-│       └── auditor.py
+│       ├── auditor.py
+│       └── reconciliation.py
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py
@@ -63,28 +82,23 @@ Backend architecture for LPG Enterprise Resource Planning supporting four distin
 │   ├── test_delivery_boy.py
 │   ├── test_admin.py
 │   ├── test_auditor.py
-│   └── test_rbac_matrix.py
+│   ├── test_rbac_matrix.py
+│   └── test_reconciliation.py
+├── generate_data.py
+├── detect_errors.py
+├── index.html
 ├── requirements.txt
 └── README.md
 ```
 
-## Roles & Enforced Permissions
-
-| Role | Client | Permitted Actions | Restrictions |
-|---|---|---|---|
-| **CUSTOMER** | Android App | View/update profile, book cylinders (within quota), view own deliveries and payment receipts. | Access limited strictly to own records. Cannot access staff, admin, or auditor tools. |
-| **DELIVERY_BOY** | Android App | View assigned orders, submit delivery outcome (success/failure), collect cash/UPI payments, sync offline queue. | Limited to assigned deliveries only. Cannot reassign orders, edit prices, or access audit routes. |
-| **ADMIN** | Web Dashboard | Manage users (activate/deactivate), view customers, cylinder inventory, assign delivery staff, apply audited financial corrections, overview dashboard. | Operational mutations create audit log entries. |
-| **AUDITOR** | Web Dashboard | Read reconciliation reports, discrepancy evidence, financial summaries, financial correction history, system audit logs. | Strictly read-only (GET methods only). Any mutation (POST/PUT/DELETE) is denied with 403 Forbidden. |
-
 ## API Endpoints
 
-### 1. Authentication (`/api/v1/auth`)
-- `POST /register`: Register new customer and customer profile.
+### Authentication (`/api/v1/auth`)
+- `POST /register`: Register new customer and profile.
 - `POST /login`: Authenticate credentials and receive JWT bearer token.
 - `GET /me`: Get authenticated user profile.
 
-### 2. Customer App (`/api/v1/customer`)
+### Customer App (`/api/v1/customer`)
 - `GET /profile`: Get customer profile and quota balance.
 - `PUT /profile`: Update delivery address and contact number.
 - `POST /bookings`: Create LPG cylinder booking (quota enforced).
@@ -93,13 +107,13 @@ Backend architecture for LPG Enterprise Resource Planning supporting four distin
 - `GET /deliveries`: Track personal cylinder delivery status.
 - `GET /payments`: View receipts and payment records.
 
-### 3. Delivery Boy App (`/api/v1/delivery-boy`)
+### Delivery Boy App (`/api/v1/delivery-boy`)
 - `GET /deliveries/assigned`: List active delivery assignments for logged-in driver.
 - `POST /deliveries/{assignment_id}/outcome`: Record delivery completion or failure.
 - `POST /deliveries/{assignment_id}/collect-payment`: Collect cash or UPI payment.
 - `POST /deliveries/sync-offline`: Batch synchronize offline queued delivery outcomes and payments.
 
-### 4. Admin Dashboard (`/api/v1/admin`)
+### Admin Dashboard (`/api/v1/admin`)
 - `GET /users`: List users filtered by role.
 - `POST /users`: Provision staff, auditor, or admin accounts.
 - `PUT /users/{id}/status`: Activate or deactivate user access.
@@ -113,38 +127,42 @@ Backend architecture for LPG Enterprise Resource Planning supporting four distin
 - `POST /financial/correct`: Apply audited financial correction on payment records.
 - `GET /dashboard/overview`: Get operational summary stats.
 
-### 5. Auditor Dashboard (`/api/v1/auditor`)
+### Auditor Dashboard (`/api/v1/auditor`)
 - `GET /reconciliation-reports`: Three-way reconciliation (bookings vs deliveries vs payments).
 - `GET /discrepancy-evidence`: Evidence of anomalies (unpaid deliveries, quota breaches, missing failure reasons).
 - `GET /financial-summaries`: Net sales, collections by payment method, pending balances, correction variances.
 - `GET /financial-corrections`: Immutable audit log of all financial corrections.
 - `GET /audit-logs`: System audit trail of security and operational actions.
 
-## Setup & Running
+### Reconciliation Engine (`/api/v1/reconciliation`)
+- `POST /run`: Trigger reconciliation against database records (Admin only).
+- `GET /findings`: Paginated, searchable, filterable list of flagged findings (Admin & Auditor).
+- `GET /runs`: View reconciliation execution history (Admin & Auditor).
+- `GET /summary`: Summary statistics grouped by rule, severity, and review status (Admin & Auditor).
+- `PUT /findings/{finding_id}/review`: Mark a finding as REVIEWED, RESOLVED, or DISMISSED with recorded reason and audit logging (Admin only).
 
-### 1. Environment Setup
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+## Web Dashboard (`/console`)
+Access the web console at `http://localhost:8000/console`. It provides real-time integration with backend APIs for Admin and Auditor roles, including running reconciliation, filtering flagged records, and reviewing discrepancies.
 
-### 2. Environment Configuration
-Create a `.env` file or export environment variables:
-```bash
-DATABASE_URL=postgresql://username:password@localhost:5432/lpgerp
-SECRET_KEY=your-secret-key-here
-```
-If `DATABASE_URL` is omitted, the application automatically uses SQLite (`sqlite:///./lpgerp.db`).
+## Commands
 
-### 3. Start Development Server
+### 1. Run Backend Server
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Interactive API documentation is accessible at `http://localhost:8000/docs`.
 
-### 4. Run Test Suite
+### 2. Generate Synthetic Dataset
+```bash
+python generate_data.py
+```
+
+### 3. Run Prototype Detection Evaluation
+```bash
+python detect_errors.py
+```
+
+### 4. Run Automated Test Suite
 ```bash
 pytest -v
 ```
-All 52 automated tests verify authentication, customer workflows, delivery operations, offline sync, admin functions, auditor read-only guarantees, and the complete cross-role RBAC matrix.
+All 68 tests verify the authentication system, customer isolation, delivery boy operations, admin controls, auditor restrictions, the six detection rules, idempotency, review actions, and evaluation against `ground_truth.csv`.

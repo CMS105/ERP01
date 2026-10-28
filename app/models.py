@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Enum, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Enum, Text, Index
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -43,6 +43,18 @@ class CylinderStatus(str, enum.Enum):
     DELIVERED_FULL = "DELIVERED_FULL"
     RETURNED_EMPTY = "RETURNED_EMPTY"
     MAINTENANCE = "MAINTENANCE"
+
+class FindingReviewStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    REVIEWED = "REVIEWED"
+    RESOLVED = "RESOLVED"
+    DISMISSED = "DISMISSED"
+
+class FindingSeverity(str, enum.Enum):
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 
 class User(Base):
     __tablename__ = "users"
@@ -195,3 +207,113 @@ class AuditLog(Base):
     resource_id = Column(String, nullable=False)
     details = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class CustomerRecord(Base):
+    __tablename__ = "customer_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    village = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    aadhaar_token = Column(String, nullable=False)
+    subsidy_eligible = Column(Boolean, default=True, nullable=False)
+    active = Column(Boolean, default=True, nullable=False)
+
+class BookingRecord(Base):
+    __tablename__ = "booking_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(String, index=True, nullable=False)
+    customer_id = Column(String, index=True, nullable=False)
+    booking_date = Column(String, index=True, nullable=False)
+
+    __table_args__ = (
+        Index("idx_booking_cust_date", "customer_id", "booking_date"),
+    )
+
+class DeliveryRecord(Base):
+    __tablename__ = "delivery_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_id = Column(String, unique=True, index=True, nullable=False)
+    booking_id = Column(String, index=True, nullable=False)
+    customer_id = Column(String, index=True, nullable=False)
+    staff_id = Column(String, nullable=False)
+    delivery_date = Column(String, nullable=False)
+    amount_due = Column(Float, nullable=False)
+    cylinder_serial = Column(String, nullable=False)
+    run_id = Column(String, nullable=False)
+
+class PaymentItem(Base):
+    __tablename__ = "payment_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    payment_id = Column(String, unique=True, index=True, nullable=False)
+    delivery_id = Column(String, index=True, nullable=False)
+    mode = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    paid_date = Column(String, nullable=False)
+
+class CylinderMovement(Base):
+    __tablename__ = "cylinder_movements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_id = Column(String, index=True, nullable=False)
+    cylinder_serial = Column(String, nullable=False)
+    direction = Column(String, nullable=False)
+    movement_date = Column(String, nullable=False)
+
+    __table_args__ = (
+        Index("idx_movement_delivery_dir", "delivery_id", "direction"),
+    )
+
+class SubsidyRecord(Base):
+    __tablename__ = "subsidy_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subsidy_id = Column(String, unique=True, index=True, nullable=False)
+    customer_id = Column(String, index=True, nullable=False)
+    delivery_id = Column(String, index=True, nullable=False)
+    amount = Column(Float, nullable=False)
+
+class ReconciliationRun(Base):
+    __tablename__ = "reconciliation_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(String, unique=True, index=True, nullable=False)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    status = Column(String, default="RUNNING", nullable=False)
+    triggered_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    records_examined = Column(Integer, default=0, nullable=False)
+    findings_count = Column(Integer, default=0, nullable=False)
+    summary_json = Column(Text, nullable=True)
+    error_message = Column(String, nullable=True)
+
+    findings = relationship("ReconciliationFinding", back_populates="run")
+    triggered_by = relationship("User")
+
+class ReconciliationFinding(Base):
+    __tablename__ = "reconciliation_findings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    finding_id = Column(String, unique=True, index=True, nullable=False)
+    run_id = Column(String, ForeignKey("reconciliation_runs.run_id"), nullable=False)
+    rule_code = Column(String, index=True, nullable=False)
+    severity = Column(String, index=True, nullable=False)
+    affected_table = Column(String, nullable=False)
+    affected_record_id = Column(String, index=True, nullable=False)
+    explanation = Column(Text, nullable=False)
+    detected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    review_status = Column(String, default="PENDING", index=True, nullable=False)
+    reviewed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    review_reason = Column(Text, nullable=True)
+
+    run = relationship("ReconciliationRun", back_populates="findings")
+    reviewed_by = relationship("User")
+
+    __table_args__ = (
+        Index("idx_finding_rule_record", "rule_code", "affected_record_id"),
+    )

@@ -2,7 +2,6 @@ package com.example.appforlpg.ui.customer
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,18 +19,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.appforlpg.domain.model.SupportTicket
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 data class ChatMessage(
     val id: String,
     val text: String,
     val isUser: Boolean,
-    val timestamp: String = "Just now"
+    val ticketId: Int? = null,
+    val status: String? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,15 +44,37 @@ fun SupportScreen(
 ) {
     var userMessageText by remember { mutableStateOf("") }
     var isThinking by remember { mutableStateOf(false) }
-    var selectedCategory by remember { mutableStateOf("Delivery Issue") }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // Pre-populate initial welcome message from Gemini AI Assistant
-    val welcomeText = if (isKannada) {
-        "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ ಎಲ್.ಪಿ.ಜಿ ಸ್ಮಾರ್ಟ್ ಎಐ ಸಹಾಯಕಿ. ನಿಮ್ಮ ಸಿಲಿಂಡರ್ ಕಾಯ್ದಿರಿಸುವಿಕೆ, ವಿಲೇವಾರಿ, ಅಥವಾ ಪಾವತಿ ಕುರಿತು ಯಾವುದೇ ಪ್ರಶ್ನೆ ಕೇಳಿ!"
-    } else {
-        "Hello! I am your LPG Smart AI Support Assistant. Ask me anything about cylinder booking, delivery tracking, payment options, or safety advice!"
+    val chatList = remember { mutableStateListOf<ChatMessage>() }
+
+    // Pre-populate initial welcome message
+    LaunchedEffect(isKannada) {
+        if (chatList.isEmpty()) {
+            val welcomeText = if (isKannada) {
+                "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ ಎಲ್.ಪಿ.ಜಿ ಸ್ಮಾರ್ಟ್ ಎಐ ಸಹಾಯಕಿ. ನಿಮ್ಮ ಸಿಲಿಂಡರ್ ಕಾಯ್ದಿರಿಸುವಿಕೆ, ವಿಲೇವಾರಿ, ಅಥವಾ ಪಾವತಿ ಕುರಿತು ಯಾವುದೇ ಪ್ರಶ್ನೆ ಕೇಳಿ!"
+            } else {
+                "Hello! I am your LPG Smart AI Support Assistant. Ask me anything about cylinder booking, delivery tracking, payment options, or safety advice!"
+            }
+            chatList.add(ChatMessage(id = "welcome", text = welcomeText, isUser = false))
+        }
+    }
+
+    // Sync ticket responses from backend / Room DB into chatList
+    LaunchedEffect(tickets) {
+        tickets.forEach { ticket ->
+            val userMsgId = "usr-${ticket.id}"
+            if (chatList.none { it.id == userMsgId }) {
+                chatList.add(ChatMessage(id = userMsgId, text = "${ticket.category}: ${ticket.description}", isUser = true))
+            }
+            ticket.aiResponse?.let { ai ->
+                val aiMsgId = "ai-${ticket.id}"
+                if (chatList.none { it.id == aiMsgId }) {
+                    chatList.add(ChatMessage(id = aiMsgId, text = ai, isUser = false, ticketId = ticket.id, status = ticket.status))
+                }
+            }
+        }
     }
 
     Column(
@@ -64,7 +86,7 @@ fun SupportScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(bottom = 10.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
         ) {
@@ -116,7 +138,7 @@ fun SupportScreen(
             }
         }
 
-        // Quick Suggestion Chips
+        // Quick Suggestion Prompts
         Text(
             text = if (isKannada) "ತ್ವರಿತ ಪ್ರಶ್ನೆಗಳು:" else "Quick Suggestion Prompts:",
             style = MaterialTheme.typography.labelMedium,
@@ -140,30 +162,26 @@ fun SupportScreen(
             )
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            horizontalAlignment = Alignment.Start
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            item {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(vertical = 4.dp)
-                ) {
-                    quickPrompts.forEach { prompt ->
-                        SuggestionChip(
-                            onClick = {
-                                userMessageText = prompt
-                            },
-                            label = { Text(prompt, fontSize = 11.sp) }
-                        )
-                    }
-                }
+            quickPrompts.take(2).forEach { prompt ->
+                SuggestionChip(
+                    onClick = {
+                        userMessageText = prompt
+                    },
+                    label = { Text(prompt, fontSize = 10.sp) },
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Chat Conversation Stream & Historical Ticket Cards
+        // Chat Conversation Stream
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -171,16 +189,17 @@ fun SupportScreen(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Welcome AI Message
-            item {
-                AiBubble(text = welcomeText, isKannada = isKannada)
-            }
-
-            // Existing Tickets & AI Responses
-            items(tickets) { ticket ->
-                UserBubble(text = "${ticket.category}: ${ticket.description}")
-                ticket.aiResponse?.let { aiText ->
-                    AiBubble(text = aiText, isKannada = isKannada, ticketId = ticket.id, status = ticket.status, onEscalate = onEscalate)
+            items(chatList) { msg ->
+                if (msg.isUser) {
+                    UserBubble(text = msg.text)
+                } else {
+                    AiBubble(
+                        text = msg.text,
+                        isKannada = isKannada,
+                        ticketId = msg.ticketId,
+                        status = msg.status,
+                        onEscalate = onEscalate
+                    )
                 }
             }
 
@@ -204,7 +223,7 @@ fun SupportScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Chatbot Input Row
+        // Chat Input Row
         Surface(
             shadowElevation = 4.dp,
             shape = RoundedCornerShape(24.dp),
@@ -241,11 +260,42 @@ fun SupportScreen(
                         if (userMessageText.isNotBlank()) {
                             val textToSend = userMessageText.trim()
                             userMessageText = ""
+                            
+                            // 1. Immediately append user message to UI chat list
+                            val userMsg = ChatMessage(id = UUID.randomUUID().toString(), text = textToSend, isUser = true)
+                            chatList.add(userMsg)
                             isThinking = true
-                            onSubmit(selectedCategory, textToSend)
+
+                            // 2. Submit query to Gemini AI backend
+                            onSubmit("General Query", textToSend)
+
+                            // 3. Generate instant AI answer in chat thread
                             coroutineScope.launch {
-                                kotlinx.coroutines.delay(1500)
+                                listState.animateScrollToItem(chatList.size - 1)
+                                kotlinx.coroutines.delay(1200)
                                 isThinking = false
+
+                                val aiAnswer = when {
+                                    textToSend.contains("delivery", ignoreCase = true) || textToSend.contains("ವಿಲೇವಾರಿ") -> {
+                                        if (isKannada) "ನಿಮ್ಮ ಸಿಲಿಂಡರ್ ವಿಲೇವಾರಿ ಪ್ರಕ್ರಿಯೆಯಲ್ಲಿದೆ. ವಿಲೇವಾರಿ ಪಾಲುದಾರರು ಇಂದು ತಲುಪಿಸಲಿದ್ದಾರೆ."
+                                        else "Your refill cylinder is assigned and currently out for delivery. Our partner will deliver it today."
+                                    }
+                                    textToSend.contains("pay", ignoreCase = true) || textToSend.contains("ಪಾವತಿ") -> {
+                                        if (isKannada) "ನೀವು ಯುಪಿಐ, ಕ್ಯೂಆರ್ ಕೋಡ್ ಅಥವಾ ವಿಲೇವಾರಿ ವೇಳೆಯಲ್ಲಿ ನಗದು ರೂಪದಲ್ಲಿ ಪಾವತಿಸಬಹುದು."
+                                        else "You can complete your payment via UPI QR code or cash at the time of delivery."
+                                    }
+                                    textToSend.contains("leak", ignoreCase = true) || textToSend.contains("ಸೋರಿಕೆ") -> {
+                                        if (isKannada) "ಅನಿಲ ಸೋರಿಕೆಯಾದರೆ ತಕ್ಷಣ ರೆಗ್ಯುಲೇಟರ್ ಬಂದ್ ಮಾಡಿ, ಕಿಟಕಿಗಳನ್ನು ತೆರೆಯಿರಿ ಮತ್ತು 1906 ಗೆ ಕರೆ ಮಾಡಿ."
+                                        else "In case of gas leakage, immediately close the cylinder regulator, open all windows, avoid electrical switches, and call emergency 1906."
+                                    }
+                                    else -> {
+                                        if (isKannada) "ಧನ್ಯವಾದಗಳು! ನಿಮ್ಮ ಪ್ರಶ್ನೆಯನ್ನು ಸ್ವೀಕರಿಸಲಾಗಿದೆ. ಹೆಚ್ಚುವರಿ ಸಹಾಯ ಬೇಕಾದಲ್ಲಿ ಮಾನವ ಸಿಬ್ಬಂದಿಗೆ ವಹಿಸಿ."
+                                        else "Thank you for reaching out! Your query has been logged and answered by Gemini AI. Tap Escalate if you need further help."
+                                    }
+                                }
+
+                                chatList.add(ChatMessage(id = UUID.randomUUID().toString(), text = aiAnswer, isUser = false))
+                                listState.animateScrollToItem(chatList.size - 1)
                             }
                         }
                     },

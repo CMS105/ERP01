@@ -1,3 +1,6 @@
+import argparse
+
+
 if __package__:
     from .discrepancy import find_discrepancies
     from .generate_data import generate_dataset
@@ -6,10 +9,10 @@ else:
     from generate_data import generate_dataset
 
 
-ERROR_TYPE_TO_FLAG = {
-    "missing_payment": "missing_payment",
-    "duplicate_booking": "duplicate_delivery",
-    "underpayment": "amount_mismatch",
+ERROR_TYPES_BY_FLAG = {
+    "missing_payment": ("missing_payment",),
+    "duplicate_delivery": ("duplicate_booking",),
+    "amount_mismatch": ("underpayment", "amount_mismatch"),
 }
 
 
@@ -47,23 +50,21 @@ def _print_metrics(label, expected, detected):
         f"false positives={false_positives}, false negatives={false_negatives}, "
         f"precision={precision:.3f}, recall={recall:.3f}"
     )
-    if false_positive_records:
-        print(f"  Example false positives: {sorted(false_positive_records)[:3]}")
-    if false_negative_records:
-        print(f"  Example false negatives: {sorted(false_negative_records)[:3]}")
+    print(f"  False positives: {sorted(false_positive_records)}")
+    print(f"  False negatives: {sorted(false_negative_records)}")
     return false_positive_records, false_negative_records
 
 
-def main():
-    deliveries, payments, planted_errors = generate_dataset()
+def main(messy=False):
+    deliveries, payments, planted_errors = generate_dataset(messy=messy)
     flags = find_discrepancies(deliveries, payments)
 
     expected_by_type = {}
     detected_by_type = {}
     booking_by_delivery = deliveries.set_index("delivery_id")["booking_id"]
-    for error_type, flag_type in ERROR_TYPE_TO_FLAG.items():
+    for flag_type, error_types in ERROR_TYPES_BY_FLAG.items():
         expected_records = planted_errors.loc[
-            planted_errors["error_type"] == error_type, "record_id"
+            planted_errors["error_type"].isin(error_types), "record_id"
         ]
         detected_records = flags.loc[
             flags["flag_type"] == flag_type, "record_id"
@@ -88,4 +89,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Evaluate discrepancy detection.")
+    parser.add_argument(
+        "--messy",
+        action="store_true",
+        help="Include legitimate edge cases and planted overpayments.",
+    )
+    main(messy=parser.parse_args().messy)

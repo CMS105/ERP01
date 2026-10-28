@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,7 +44,6 @@ fun SupportScreen(
     var userMessageText by remember { mutableStateOf("") }
     var isThinking by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
 
     val chatList = remember { mutableStateListOf<ChatMessage>() }
 
@@ -79,14 +77,13 @@ fun SupportScreen(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(8.dp)
+            .fillMaxWidth()
+            .padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // AI Chatbot Header Banner
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
         ) {
@@ -138,6 +135,36 @@ fun SupportScreen(
             }
         }
 
+        // Active Chat Messages Display (UserBubbles & AiBubbles)
+        chatList.forEach { msg ->
+            if (msg.isUser) {
+                UserBubble(text = msg.text)
+            } else {
+                AiBubble(
+                    text = msg.text,
+                    isKannada = isKannada,
+                    ticketId = msg.ticketId,
+                    status = msg.status,
+                    onEscalate = onEscalate
+                )
+            }
+        }
+
+        if (isThinking) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(8.dp)
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isKannada) "ಎಐ ಉತ್ತರ ತಯಾರಿಸುತ್ತಿದೆ..." else "Gemini AI is generating response...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
         // Quick Suggestion Prompts
         Text(
             text = if (isKannada) "ತ್ವರಿತ ಪ್ರಶ್ನೆಗಳು:" else "Quick Suggestion Prompts:",
@@ -163,9 +190,7 @@ fun SupportScreen(
         }
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             quickPrompts.take(2).forEach { prompt ->
@@ -178,47 +203,6 @@ fun SupportScreen(
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Chat Conversation Stream
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            chatList.forEach { msg ->
-                if (msg.isUser) {
-                    UserBubble(text = msg.text)
-                } else {
-                    AiBubble(
-                        text = msg.text,
-                        isKannada = isKannada,
-                        ticketId = msg.ticketId,
-                        status = msg.status,
-                        onEscalate = onEscalate
-                    )
-                }
-            }
-
-            if (isThinking) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(8.dp)
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isKannada) "ಎಐ ಉತ್ತರ ತಯಾರಿಸುತ್ತಿದೆ..." else "Gemini AI is generating response...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         // Chat Input Row
         Surface(
@@ -258,17 +242,13 @@ fun SupportScreen(
                             val textToSend = userMessageText.trim()
                             userMessageText = ""
                             
-                            // 1. Immediately append user message to UI chat list
                             val userMsg = ChatMessage(id = UUID.randomUUID().toString(), text = textToSend, isUser = true)
                             chatList.add(userMsg)
                             isThinking = true
 
-                            // 2. Submit query to Gemini AI backend
                             onSubmit("General Query", textToSend)
 
-                            // 3. Generate instant AI answer in chat thread
                             coroutineScope.launch {
-                                listState.animateScrollToItem(chatList.size - 1)
                                 kotlinx.coroutines.delay(1200)
                                 isThinking = false
 
@@ -292,7 +272,6 @@ fun SupportScreen(
                                 }
 
                                 chatList.add(ChatMessage(id = UUID.randomUUID().toString(), text = aiAnswer, isUser = false))
-                                listState.animateScrollToItem(chatList.size - 1)
                             }
                         }
                     },

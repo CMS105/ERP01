@@ -1,4 +1,4 @@
-# LPG ERP Backend & Reconciliation Engine
+# ERP01 - LPG ERP Backend & Reconciliation Engine
 
 Enterprise Resource Planning backend architecture for LPG cylinder operations with four-role backend RBAC, offline synchronization, and an integrated PostgreSQL reconciliation engine.
 
@@ -67,23 +67,14 @@ The engine detects discrepancies directly from PostgreSQL database models:
 │   ├── data_loader.py
 │   ├── main.py
 │   └── routers/
-│       ├── __init__.py
-│       ├── auth.py
-│       ├── customer.py
-│       ├── delivery_boy.py
-│       ├── admin.py
-│       ├── auditor.py
-│       └── reconciliation.py
+├── ml/
+│   ├── adapter.py
+│   ├── cylinders.py
+│   ├── discrepancy.py
+│   ├── evaluate.py
+│   └── generate_data.py
+├── android/
 ├── tests/
-│   ├── __init__.py
-│   ├── conftest.py
-│   ├── test_auth.py
-│   ├── test_customer.py
-│   ├── test_delivery_boy.py
-│   ├── test_admin.py
-│   ├── test_auditor.py
-│   ├── test_rbac_matrix.py
-│   └── test_reconciliation.py
 ├── generate_data.py
 ├── detect_errors.py
 ├── index.html
@@ -151,18 +142,7 @@ Access the web console at `http://localhost:8000/console`. It provides real-time
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2. Generate Synthetic Dataset
-```bash
-python generate_data.py
-```
-
-### 3. Run Prototype Detection Evaluation
-```bash
-python detect_errors.py
-```
-
-### 4. Run Automated Test Suite
+### 2. Run Automated Test Suite
 ```bash
 pytest -v
 ```
-All 68 tests verify the authentication system, customer isolation, delivery boy operations, admin controls, auditor restrictions, the six detection rules, idempotency, review actions, and evaluation against `ground_truth.csv`.

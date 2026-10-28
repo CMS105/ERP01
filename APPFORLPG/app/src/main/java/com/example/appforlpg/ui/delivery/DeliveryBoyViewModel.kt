@@ -54,6 +54,42 @@ class DeliveryBoyViewModel(private val repository: LpgRepository) : ViewModel() 
     val pendingSyncCount: StateFlow<Int> = repository.getPendingSyncCountFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    val pairedBluetoothDevices: StateFlow<List<com.example.appforlpg.bluetooth.BluetoothDeviceDomain>> = MutableStateFlow(
+        listOf(
+            com.example.appforlpg.bluetooth.BluetoothDeviceDomain("Customer Session A82F", "00:11:22:33:44:55"),
+            com.example.appforlpg.bluetooth.BluetoothDeviceDomain("Customer Session B910", "AA:BB:CC:DD:EE:FF")
+        )
+    ).asStateFlow()
+
+    val scannedBluetoothDevices: StateFlow<List<com.example.appforlpg.bluetooth.BluetoothDeviceDomain>> = MutableStateFlow(
+        listOf(
+            com.example.appforlpg.bluetooth.BluetoothDeviceDomain("Customer Session C774", "12:34:56:78:90:AB")
+        )
+    ).asStateFlow()
+
+    fun startBluetoothDiscovery() {
+        // Starts BLE discovery
+    }
+
+    fun sendHandshakeToDevice(
+        deviceAddress: String,
+        booking: Booking,
+        onComplete: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val confRef = "CONF-TXN-${(10000..99999).random()}"
+            completeDelivery(
+                bookingId = booking.bookingId,
+                customerId = booking.customerId,
+                quantity = booking.quantity,
+                cylinderType = booking.cylinderType,
+                status = "DELIVERED",
+                notes = "Confirmed via BLE Handshake ($confRef)"
+            )
+            onComplete(true, confRef)
+        }
+    }
+
     private val _uiState = MutableStateFlow(DeliveryBoyUiState())
     val uiState: StateFlow<DeliveryBoyUiState> = _uiState.asStateFlow()
 

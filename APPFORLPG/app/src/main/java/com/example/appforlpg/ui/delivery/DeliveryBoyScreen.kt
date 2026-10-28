@@ -81,6 +81,7 @@ fun DeliveryBoyScreen(
 
     var activeDeliveryForCompletion by remember { mutableStateOf<Booking?>(null) }
     var activeDeliveryForPayment by remember { mutableStateOf<Booking?>(null) }
+    var activeDeliveryForBluetooth by remember { mutableStateOf<Booking?>(null) }
 
     val filteredBookings = remember(assignedBookings, uiState.searchQuery, uiState.statusFilter) {
         assignedBookings.filter { booking ->
@@ -316,11 +317,30 @@ fun DeliveryBoyScreen(
                         booking = booking,
                         isKannada = isKannada,
                         onCompleteClick = { activeDeliveryForCompletion = booking },
-                        onPaymentClick = { activeDeliveryForPayment = booking }
+                        onPaymentClick = { activeDeliveryForPayment = booking },
+                        onBluetoothConnectClick = { activeDeliveryForBluetooth = booking }
                     )
                 }
             }
         }
+    }
+
+    // Bluetooth Discovery Dialog with explicit Connect button
+    activeDeliveryForBluetooth?.let { bookingToConnect ->
+        val pairedDevices by deliveryBoyViewModel.pairedBluetoothDevices.collectAsState()
+        val scannedDevices by deliveryBoyViewModel.scannedBluetoothDevices.collectAsState()
+
+        BluetoothDiscoveryDialog(
+            booking = bookingToConnect,
+            isKannada = isKannada,
+            pairedDevices = pairedDevices,
+            scannedDevices = scannedDevices,
+            onStartScan = { deliveryBoyViewModel.startBluetoothDiscovery() },
+            onConnectDevice = { device, onComplete ->
+                deliveryBoyViewModel.sendHandshakeToDevice(device.address, bookingToConnect, onComplete)
+            },
+            onDismiss = { activeDeliveryForBluetooth = null }
+        )
     }
 
     // Complete Delivery Dialog

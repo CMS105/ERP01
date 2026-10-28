@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -16,10 +16,12 @@ router = APIRouter(prefix="/api/v1/delivery-boy", tags=["Delivery Boy App"])
 
 @router.get("/deliveries/assigned", response_model=List[DeliveryAssignmentOut])
 def get_assigned_deliveries(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_delivery_boy)
 ):
-    return DeliveryBoyService.get_assigned_deliveries(db, current_user)
+    return DeliveryBoyService.get_assigned_deliveries(db, current_user, skip=skip, limit=limit)
 
 @router.post("/deliveries/{assignment_id}/outcome", response_model=DeliveryExecutionOut, status_code=status.HTTP_201_CREATED)
 def record_delivery_outcome(

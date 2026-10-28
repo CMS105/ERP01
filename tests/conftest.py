@@ -11,6 +11,7 @@ from app.models import (
     Booking, BookingStatus, DeliveryAssignment, CylinderStatus
 )
 from app.auth import hash_password, create_access_token
+from app.cache import cache
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
@@ -23,6 +24,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture(scope="function")
 def db_session():
+    cache.clear()
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
@@ -30,6 +32,7 @@ def db_session():
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        cache.clear()
 
 @pytest.fixture(scope="function")
 def client(db_session):

@@ -3,7 +3,8 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, ConfigDict
 from app.models import (
     UserRole, BookingStatus, DeliveryOutcome, PaymentStatus,
-    PaymentMethod, CylinderStatus, FindingReviewStatus, FindingSeverity
+    PaymentMethod, CylinderStatus, FindingReviewStatus, FindingSeverity,
+    SupportTicketStatus
 )
 
 class Token(BaseModel):
@@ -111,6 +112,7 @@ class BookingCreate(BaseModel):
     cylinder_type: str = "14.2kg"
     quantity: int = 1
     scheduled_date: str
+    idempotency_key: Optional[str] = None
 
 class PaymentRecordOut(BaseModel):
     id: int
@@ -155,6 +157,7 @@ class DeliveryAssignmentOut(BaseModel):
 class BookingOut(BaseModel):
     id: int
     booking_number: str
+    idempotency_key: Optional[str] = None
     customer_id: int
     cylinder_type: str
     quantity: int
@@ -167,6 +170,25 @@ class BookingOut(BaseModel):
     created_at: datetime
     assignment: Optional[DeliveryAssignmentOut] = None
     payment: Optional[PaymentRecordOut] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class VehicleRecommendationRequest(BaseModel):
+    zone_or_route: str
+    total_cylinders: int
+    delivery_count: int
+    area_sq_km: Optional[float] = 10.0
+    has_narrow_access: Optional[bool] = False
+    has_coordinates: Optional[bool] = True
+
+class VehicleRecommendationOut(BaseModel):
+    zone_or_route: str
+    recommended_vehicle: str
+    vehicle_capacity: int
+    density_score: float
+    trips_required: int
+    explanation: str
+    can_auto_dispatch: bool
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -325,3 +347,44 @@ class ReconciliationSummaryOut(BaseModel):
     dismissed_findings: int
     by_rule: Dict[str, int]
     by_severity: Dict[str, int]
+
+class SupportMessageCreate(BaseModel):
+    message: str
+
+class SupportMessageOut(BaseModel):
+    id: int
+    ticket_id: int
+    sender_id: Optional[int] = None
+    message: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class SupportTicketCreate(BaseModel):
+    category: str
+    description: str
+    transaction_id: Optional[str] = None
+    language: str = "English"
+    offline_sync_id: Optional[str] = None
+
+class SupportTicketEscalate(BaseModel):
+    escalation_reason: str
+
+class SupportTicketOut(BaseModel):
+    id: int
+    ticket_number: str
+    customer_id: int
+    transaction_id: Optional[str] = None
+    category: str
+    description: str
+    language: str
+    status: SupportTicketStatus
+    ai_response: Optional[str] = None
+    escalation_reason: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    assigned_staff_id: Optional[int] = None
+    messages: List[SupportMessageOut] = []
+
+    model_config = ConfigDict(from_attributes=True)
+

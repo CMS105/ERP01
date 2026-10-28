@@ -38,11 +38,20 @@ class PaymentMethod(str, enum.Enum):
 
 class CylinderStatus(str, enum.Enum):
     IN_STOCK = "IN_STOCK"
+    RESERVED = "RESERVED"
     ASSIGNED = "ASSIGNED"
     OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY"
     DELIVERED_FULL = "DELIVERED_FULL"
     RETURNED_EMPTY = "RETURNED_EMPTY"
     MAINTENANCE = "MAINTENANCE"
+
+class SupportTicketStatus(str, enum.Enum):
+    PENDING_SYNC = "PENDING_SYNC"
+    OPEN = "OPEN"
+    AI_ASSISTED = "AI_ASSISTED"
+    WAITING_FOR_STAFF = "WAITING_FOR_STAFF"
+    IN_PROGRESS = "IN_PROGRESS"
+    RESOLVED = "RESOLVED"
 
 class FindingReviewStatus(str, enum.Enum):
     PENDING = "PENDING"
@@ -110,11 +119,16 @@ class CylinderInventory(Base):
     batch_code = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    __table_args__ = (
+        Index("idx_cyl_type_status", "cylinder_type", "status"),
+    )
+
 class Booking(Base):
     __tablename__ = "bookings"
 
     id = Column(Integer, primary_key=True, index=True)
     booking_number = Column(String, unique=True, index=True, nullable=False)
+    idempotency_key = Column(String, unique=True, index=True, nullable=True)
     customer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     cylinder_type = Column(String, default="14.2kg", nullable=False)
     quantity = Column(Integer, default=1, nullable=False)
@@ -129,6 +143,10 @@ class Booking(Base):
     customer = relationship("User", back_populates="bookings", foreign_keys=[customer_id])
     assignment = relationship("DeliveryAssignment", back_populates="booking", uselist=False)
     payment = relationship("PaymentRecord", back_populates="booking", uselist=False)
+
+    __table_args__ = (
+        Index("idx_bookings_cust_status", "customer_id", "status"),
+    )
 
 class DeliveryAssignment(Base):
     __tablename__ = "delivery_assignments"
@@ -145,6 +163,10 @@ class DeliveryAssignment(Base):
     delivery_boy = relationship("User", back_populates="assigned_deliveries", foreign_keys=[delivery_boy_id])
     cylinder = relationship("CylinderInventory")
     execution = relationship("DeliveryExecution", back_populates="assignment", uselist=False)
+
+    __table_args__ = (
+        Index("idx_delivery_boy_status", "delivery_boy_id", "status"),
+    )
 
 class DeliveryExecution(Base):
     __tablename__ = "delivery_executions"
@@ -180,6 +202,10 @@ class PaymentRecord(Base):
     booking = relationship("Booking", back_populates="payment")
     corrections = relationship("FinancialCorrection", back_populates="payment")
 
+    __table_args__ = (
+        Index("idx_payment_booking_status", "booking_id", "payment_status"),
+    )
+
 class FinancialCorrection(Base):
     __tablename__ = "financial_corrections"
 
@@ -207,6 +233,11 @@ class AuditLog(Base):
     resource_id = Column(String, nullable=False)
     details = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("idx_audit_resource", "resource_type", "resource_id"),
+        Index("idx_audit_timestamp", "timestamp"),
+    )
 
 class CustomerRecord(Base):
     __tablename__ = "customer_records"
@@ -316,4 +347,38 @@ class ReconciliationFinding(Base):
 
     __table_args__ = (
         Index("idx_finding_rule_record", "rule_code", "affected_record_id"),
+        Index("idx_finding_review_status", "review_status"),
     )
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticket_number = Column(String, unique=True, index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    transaction_id = Column(String, nullable=True)
+    category = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    language = Column(String, default="English", nullable=False)
+    status = Column(Enum(SupportTicketStatus), default=SupportTicketStatus.OPEN, nullable=False)
+    ai_response = Column(Text, nullable=True)
+    escalation_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    assigned_staff_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    customer = relationship("User", foreign_keys=[customer_id])
+    assigned_staff = relationship("User", foreign_keys=[assigned_staff_id])
+    messages = relationship("SupportMessage", back_populates="ticket")
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticket_id = Column(Integer, ForeignKey("support_tickets.id"), nullable=False)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    ticket = relationship("SupportTicket", back_populates="messages")
+    sender = relationship("User")

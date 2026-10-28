@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import (
     User, UserRole, ReconciliationRun, ReconciliationFinding,
     AuditLog, FindingReviewStatus
@@ -15,17 +15,42 @@ from app.schemas import (
     PaginatedFindingsOut, ReconciliationSummaryOut, FindingReviewRequest
 )
 from app.reconciliation import run_reconciliation
+from app.cache import cache
 
 router = APIRouter(prefix="/api/v1/reconciliation", tags=["Reconciliation Engine"])
 
 require_admin_or_auditor = require_roles(UserRole.ADMIN, UserRole.AUDITOR)
 require_admin_only = require_roles(UserRole.ADMIN)
 
+def _background_reconciliation_job(user_id: Optional[int]):
+    db = SessionLocal()
+    try:
+        run_reconciliation(db, triggered_by_user_id=user_id)
+        cache.delete("reconciliation:summary")
+    finally:
+        db.close()
+
 @router.post("/run", response_model=ReconciliationRunOut, status_code=status.HTTP_201_CREATED)
 def trigger_reconciliation(
+    background: bool = Query(False),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_only)
 ):
+    cache.delete("reconciliation:summary")
+    if background and background_tasks:
+        run_record = ReconciliationRun(
+            run_id=f"RUN-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-ASYNC",
+            started_at=datetime.now(timezone.utc),
+            status="QUEUED_BACKGROUND",
+            triggered_by_user_id=current_user.id
+        )
+        db.add(run_record)
+        db.commit()
+        db.refresh(run_record)
+        background_tasks.add_task(_background_reconciliation_job, current_user.id)
+        return run_record
+
     return run_reconciliation(db, triggered_by_user_id=current_user.id)
 
 @router.get("/runs", response_model=List[ReconciliationRunOut])
@@ -41,6 +66,11 @@ def get_reconciliation_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_or_auditor)
 ):
+    cache_key = "reconciliation:summary"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
     total_runs = db.query(ReconciliationRun).count()
     last_run = db.query(ReconciliationRun).order_by(ReconciliationRun.id.desc()).first()
 
@@ -62,7 +92,7 @@ def get_reconciliation_summary(
     ).group_by(ReconciliationFinding.severity).all()
     by_sev = {r[0]: r[1] for r in by_sev_query}
 
-    return {
+    summary = {
         "total_runs": total_runs,
         "last_run_at": last_run.started_at if last_run else None,
         "last_run_status": last_run.status if last_run else None,
@@ -74,6 +104,8 @@ def get_reconciliation_summary(
         "by_rule": by_rule,
         "by_severity": by_sev
     }
+    cache.set(cache_key, summary, ttl_seconds=60)
+    return summary
 
 @router.get("/findings", response_model=PaginatedFindingsOut)
 def get_reconciliation_findings(
@@ -147,4 +179,5 @@ def review_reconciliation_finding(
     db.commit()
     db.refresh(finding)
 
+    cache.delete("reconciliation:summary")
     return finding

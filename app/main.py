@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from app.database import Base, engine
 from app.routers import auth, customer, delivery_boy, admin, auditor, reconciliation
+from app.cache import cache
 
 Base.metadata.create_all(bind=engine)
 
@@ -32,6 +33,15 @@ def health_check():
         "status": "online",
         "service": "LPG ERP Backend API",
         "supported_roles": ["CUSTOMER", "DELIVERY_BOY", "ADMIN", "AUDITOR"]
+    }
+
+@app.get("/health")
+def detailed_health_check():
+    return {
+        "status": "healthy",
+        "service": "LPG ERP Backend API",
+        "cache_available": cache.is_available(),
+        "database": engine.dialect.name
     }
 
 @app.get("/console")

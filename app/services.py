@@ -1,6 +1,7 @@
 import uuid
+import re
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -9,24 +10,34 @@ from app.models import (
     User, UserRole, CustomerProfile, StaffProfile, CylinderInventory,
     Booking, BookingStatus, DeliveryAssignment, DeliveryExecution, DeliveryOutcome,
     PaymentRecord, PaymentStatus, PaymentMethod, CylinderStatus,
-    FinancialCorrection, AuditLog
+    FinancialCorrection, AuditLog, SupportTicket, SupportTicketStatus, SupportMessage
 )
 from app.schemas import (
     BookingCreate, DeliveryOutcomeRequest, PaymentCollectRequest,
     OfflineSyncBatchRequest, OfflineSyncBatchResponse,
     FinancialCorrectionRequest, CylinderInventoryCreate, CylinderInventoryUpdate,
-    UserCreate, CustomerProfileUpdate
+    UserCreate, CustomerProfileUpdate, SupportTicketCreate, SupportTicketEscalate
 )
 from app.auth import hash_password
+from app.cache import cache
+
+def redact_sensitive_text(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r'\b\d{4}\s?\d{4}\s?\d{4}\b', 'XXXX-XXXX-XXXX', text)
+    text = re.sub(r'password["\']?\s*[:=]\s*["\']?[^"\',\s]+', 'password="[REDACTED]"', text, flags=re.IGNORECASE)
+    text = re.sub(r'token["\']?\s*[:=]\s*["\']?[^"\',\s]+', 'token="[REDACTED]"', text, flags=re.IGNORECASE)
+    return text
 
 def log_audit(db: Session, user: Optional[User], action: str, resource_type: str, resource_id: str, details: str):
+    safe_details = redact_sensitive_text(details)
     log_entry = AuditLog(
         user_id=user.id if user else None,
         user_role=user.role.value if user else "SYSTEM",
         action=action,
         resource_type=resource_type,
         resource_id=str(resource_id),
-        details=details,
+        details=safe_details,
         timestamp=datetime.now(timezone.utc)
     )
     db.add(log_entry)
@@ -55,17 +66,63 @@ class CustomerService:
             current_user.phone = data.phone
         db.commit()
         db.refresh(profile)
+        cache.delete("dashboard:overview")
         log_audit(db, current_user, "UPDATE", "CustomerProfile", str(profile.id), "Customer updated contact and address details")
         return profile
 
     @staticmethod
     def create_booking(db: Session, current_user: User, data: BookingCreate):
-        profile = db.query(CustomerProfile).filter(CustomerProfile.user_id == current_user.id).first()
+        if data.idempotency_key:
+            existing = db.query(Booking).filter(
+                Booking.customer_id == current_user.id,
+                Booking.idempotency_key == data.idempotency_key
+            ).first()
+            if existing:
+                return existing
+
+        is_postgres = db.bind and db.bind.dialect.name == "postgresql"
+
+        if is_postgres:
+            profile = db.query(CustomerProfile).filter(
+                CustomerProfile.user_id == current_user.id
+            ).with_for_update().first()
+        else:
+            profile = db.query(CustomerProfile).filter(
+                CustomerProfile.user_id == current_user.id
+            ).first()
+
         if not profile:
             raise HTTPException(status_code=404, detail="Customer profile not found")
 
         if profile.quota_used_this_year + data.quantity > profile.cylinder_quota_limit:
             raise HTTPException(status_code=400, detail="Annual subsidized cylinder quota exceeded")
+
+        total_inventory_count = db.query(CylinderInventory).filter(
+            CylinderInventory.cylinder_type == data.cylinder_type
+        ).count()
+
+        reserved_cylinders = []
+        if total_inventory_count > 0:
+            if is_postgres:
+                available_cylinders = db.query(CylinderInventory).filter(
+                    CylinderInventory.cylinder_type == data.cylinder_type,
+                    CylinderInventory.status == CylinderStatus.IN_STOCK
+                ).with_for_update(skip_locked=True).limit(data.quantity).all()
+            else:
+                available_cylinders = db.query(CylinderInventory).filter(
+                    CylinderInventory.cylinder_type == data.cylinder_type,
+                    CylinderInventory.status == CylinderStatus.IN_STOCK
+                ).limit(data.quantity).all()
+
+            if len(available_cylinders) < data.quantity:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Cylinder stock unavailable: insufficient in-stock inventory"
+                )
+
+            for cyl in available_cylinders:
+                cyl.status = CylinderStatus.RESERVED
+                reserved_cylinders.append(cyl)
 
         booking_number = f"BK-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
         unit_price = 850.0
@@ -75,6 +132,7 @@ class CustomerService:
 
         booking = Booking(
             booking_number=booking_number,
+            idempotency_key=data.idempotency_key,
             customer_id=current_user.id,
             cylinder_type=data.cylinder_type,
             quantity=data.quantity,
@@ -87,15 +145,24 @@ class CustomerService:
         )
         profile.quota_used_this_year += data.quantity
         db.add(booking)
-        db.commit()
-        db.refresh(booking)
+        try:
+            db.commit()
+            db.refresh(booking)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Booking creation failed: {e}")
+
+        cache.delete("dashboard:overview")
+        cache.delete_pattern("inventory:*")
 
         log_audit(db, current_user, "CREATE", "Booking", str(booking.id), f"Booking created {booking.booking_number} for net payable {net_payable}")
         return booking
 
     @staticmethod
-    def get_bookings(db: Session, current_user: User):
-        return db.query(Booking).filter(Booking.customer_id == current_user.id).order_by(Booking.id.desc()).all()
+    def get_bookings(db: Session, current_user: User, skip: int = 0, limit: int = 50):
+        return db.query(Booking).filter(
+            Booking.customer_id == current_user.id
+        ).order_by(Booking.id.desc()).offset(skip).limit(limit).all()
 
     @staticmethod
     def get_booking_by_id(db: Session, current_user: User, booking_id: int):
@@ -105,19 +172,88 @@ class CustomerService:
         return booking
 
     @staticmethod
-    def get_deliveries(db: Session, current_user: User):
-        return db.query(DeliveryAssignment).join(Booking).filter(Booking.customer_id == current_user.id).order_by(DeliveryAssignment.id.desc()).all()
+    def get_deliveries(db: Session, current_user: User, skip: int = 0, limit: int = 50):
+        return db.query(DeliveryAssignment).join(Booking).filter(
+            Booking.customer_id == current_user.id
+        ).order_by(DeliveryAssignment.id.desc()).offset(skip).limit(limit).all()
 
     @staticmethod
-    def get_payments(db: Session, current_user: User):
-        return db.query(PaymentRecord).filter(PaymentRecord.customer_id == current_user.id).order_by(PaymentRecord.id.desc()).all()
+    def get_payments(db: Session, current_user: User, skip: int = 0, limit: int = 50):
+        return db.query(PaymentRecord).filter(
+            PaymentRecord.customer_id == current_user.id
+        ).order_by(PaymentRecord.id.desc()).offset(skip).limit(limit).all()
+
+import os
+import google.generativeai as genai
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "MOCK_KEY"))
+
+class SupportTicketService:
+    @staticmethod
+    def create_ticket(db: Session, current_user: User, data: SupportTicketCreate):
+        ticket_number = f"TKT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
+
+        ai_response_text = None
+        if os.environ.get("GEMINI_API_KEY"):
+            try:
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                prompt = f"""
+                You are a helpful customer support assistant for an LPG delivery service in India.
+                The customer has raised the following issue:
+                Category: {data.category}
+                Description: {data.description}
+                Transaction ID: {data.transaction_id or 'None provided'}
+                Language Preference: {data.language}
+
+                Provide a short, empathetic explanation of what might have happened and clear next steps.
+                Do not make promises about refunds or specific delivery times.
+                Respond ONLY in {data.language}. If {data.language} is Kannada, use proper Kannada script.
+                Keep it under 3 sentences.
+                """
+                response = model.generate_content(prompt)
+                ai_response_text = response.text
+            except Exception as e:
+                ai_response_text = f"We are currently experiencing high volume, but your issue has been recorded. (System Error: {e})"
+        else:
+             ai_response_text = "Thank you for reaching out. We have received your issue and our team will look into it shortly."
+
+        ticket = SupportTicket(
+            ticket_number=ticket_number,
+            customer_id=current_user.id,
+            transaction_id=data.transaction_id,
+            category=data.category,
+            description=data.description,
+            language=data.language,
+            status=SupportTicketStatus.AI_ASSISTED if ai_response_text else SupportTicketStatus.OPEN,
+            ai_response=ai_response_text
+        )
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        log_audit(db, current_user, "CREATE_TICKET", "SupportTicket", str(ticket.id), f"Created ticket {ticket_number}")
+        return ticket
+
+    @staticmethod
+    def get_tickets(db: Session, current_user: User):
+        return db.query(SupportTicket).filter(SupportTicket.customer_id == current_user.id).order_by(SupportTicket.id.desc()).all()
+
+    @staticmethod
+    def escalate_ticket(db: Session, current_user: User, ticket_id: int, data: SupportTicketEscalate):
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.customer_id == current_user.id).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        ticket.status = SupportTicketStatus.WAITING_FOR_STAFF
+        ticket.escalation_reason = data.escalation_reason
+        db.commit()
+        db.refresh(ticket)
+        log_audit(db, current_user, "ESCALATE_TICKET", "SupportTicket", str(ticket.id), "Escalated to human staff")
+        return ticket
 
 class DeliveryBoyService:
     @staticmethod
-    def get_assigned_deliveries(db: Session, current_user: User):
+    def get_assigned_deliveries(db: Session, current_user: User, skip: int = 0, limit: int = 50):
         return db.query(DeliveryAssignment).filter(
             DeliveryAssignment.delivery_boy_id == current_user.id
-        ).order_by(DeliveryAssignment.id.desc()).all()
+        ).order_by(DeliveryAssignment.id.desc()).offset(skip).limit(limit).all()
 
     @staticmethod
     def record_delivery_outcome(db: Session, current_user: User, assignment_id: int, data: DeliveryOutcomeRequest):
@@ -173,6 +309,8 @@ class DeliveryBoyService:
 
         db.commit()
         db.refresh(execution)
+        cache.delete("dashboard:overview")
+        cache.delete_pattern("inventory:*")
         log_audit(db, current_user, "RECORD_OUTCOME", "DeliveryAssignment", str(assignment.id), f"Outcome: {data.outcome.value}")
         return execution
 
@@ -214,6 +352,8 @@ class DeliveryBoyService:
 
         db.commit()
         db.refresh(payment)
+        cache.delete("dashboard:overview")
+        cache.delete("reports:financial_summary")
         log_audit(db, current_user, "COLLECT_PAYMENT", "PaymentRecord", str(payment.id), f"Collected {data.amount} via {data.payment_method.value}")
         return payment
 
@@ -308,6 +448,8 @@ class DeliveryBoyService:
             synced_payments += 1
 
         db.commit()
+        cache.delete("dashboard:overview")
+        cache.delete("reports:financial_summary")
         log_audit(db, current_user, "OFFLINE_SYNC", "BatchSync", f"{synced_outcomes}:{synced_payments}", f"Synced outcomes: {synced_outcomes}, payments: {synced_payments}")
         return OfflineSyncBatchResponse(
             synced_outcomes_count=synced_outcomes,
@@ -343,15 +485,16 @@ class AdminService:
             db.add(staff_profile)
             db.commit()
 
+        cache.delete("dashboard:overview")
         log_audit(db, current_user, "CREATE", "User", str(new_user.id), f"Created user with role {data.role.value}")
         return new_user
 
     @staticmethod
-    def get_users(db: Session, role: Optional[UserRole] = None):
+    def get_users(db: Session, role: Optional[UserRole] = None, skip: int = 0, limit: int = 50):
         query = db.query(User)
         if role:
             query = query.filter(User.role == role)
-        return query.order_by(User.id.asc()).all()
+        return query.order_by(User.id.asc()).offset(skip).limit(limit).all()
 
     @staticmethod
     def update_user_status(db: Session, current_user: User, user_id: int, is_active: bool):
@@ -360,12 +503,13 @@ class AdminService:
             raise HTTPException(status_code=404, detail="User not found")
         target.is_active = is_active
         db.commit()
+        cache.delete("dashboard:overview")
         log_audit(db, current_user, "UPDATE_STATUS", "User", str(target.id), f"Set active status to {is_active}")
         return target
 
     @staticmethod
-    def get_customers(db: Session):
-        return db.query(CustomerProfile).all()
+    def get_customers(db: Session, skip: int = 0, limit: int = 50):
+        return db.query(CustomerProfile).offset(skip).limit(limit).all()
 
     @staticmethod
     def get_customer_by_id(db: Session, customer_id: int):
@@ -375,8 +519,8 @@ class AdminService:
         return customer
 
     @staticmethod
-    def get_inventory(db: Session):
-        return db.query(CylinderInventory).order_by(CylinderInventory.id.desc()).all()
+    def get_inventory(db: Session, skip: int = 0, limit: int = 100):
+        return db.query(CylinderInventory).order_by(CylinderInventory.id.desc()).offset(skip).limit(limit).all()
 
     @staticmethod
     def create_inventory(db: Session, current_user: User, data: CylinderInventoryCreate):
@@ -393,6 +537,8 @@ class AdminService:
         db.add(item)
         db.commit()
         db.refresh(item)
+        cache.delete("dashboard:overview")
+        cache.delete_pattern("inventory:*")
         log_audit(db, current_user, "CREATE", "CylinderInventory", str(item.id), f"Added cylinder {item.serial_number}")
         return item
 
@@ -407,12 +553,14 @@ class AdminService:
             item.batch_code = data.batch_code
         db.commit()
         db.refresh(item)
+        cache.delete("dashboard:overview")
+        cache.delete_pattern("inventory:*")
         log_audit(db, current_user, "UPDATE", "CylinderInventory", str(item.id), f"Updated cylinder {item.serial_number}")
         return item
 
     @staticmethod
-    def get_bookings(db: Session):
-        return db.query(Booking).order_by(Booking.id.desc()).all()
+    def get_bookings(db: Session, skip: int = 0, limit: int = 50):
+        return db.query(Booking).order_by(Booking.id.desc()).offset(skip).limit(limit).all()
 
     @staticmethod
     def assign_booking(db: Session, current_user: User, booking_id: int, delivery_boy_id: int, cylinder_id: Optional[int] = None, notes: Optional[str] = None):
@@ -428,8 +576,8 @@ class AdminService:
             cylinder = db.query(CylinderInventory).filter(CylinderInventory.id == cylinder_id).first()
             if not cylinder:
                 raise HTTPException(status_code=404, detail="Cylinder not found")
-            if cylinder.status != CylinderStatus.IN_STOCK:
-                raise HTTPException(status_code=400, detail="Cylinder is not in stock")
+            if cylinder.status not in (CylinderStatus.IN_STOCK, CylinderStatus.RESERVED):
+                raise HTTPException(status_code=400, detail="Cylinder is not in stock or reserved")
             cylinder.status = CylinderStatus.ASSIGNED
 
         assignment = db.query(DeliveryAssignment).filter(DeliveryAssignment.booking_id == booking.id).first()
@@ -451,6 +599,7 @@ class AdminService:
         booking.status = BookingStatus.ASSIGNED
         db.commit()
         db.refresh(assignment)
+        cache.delete("dashboard:overview")
         log_audit(db, current_user, "ASSIGN", "DeliveryAssignment", str(assignment.id), f"Assigned booking {booking.booking_number} to delivery boy {delivery_boy.full_name}")
         return assignment
 
@@ -475,28 +624,38 @@ class AdminService:
         db.add(correction)
         db.commit()
         db.refresh(correction)
+        cache.delete("dashboard:overview")
+        cache.delete("reports:financial_summary")
         log_audit(db, current_user, "FINANCIAL_CORRECTION", "PaymentRecord", str(payment.id), f"Amount changed from {original_amount} to {data.corrected_amount}. Reason: {data.reason}")
         return correction
 
     @staticmethod
     def get_dashboard_overview(db: Session):
+        cache_key = "dashboard:overview"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
         total_customers = db.query(CustomerProfile).count()
         total_staff = db.query(StaffProfile).count()
         total_bookings = db.query(Booking).count()
         pending_bookings = db.query(Booking).filter(Booking.status == BookingStatus.PENDING).count()
         in_stock_cylinders = db.query(CylinderInventory).filter(CylinderInventory.status == CylinderStatus.IN_STOCK).count()
-        return {
+
+        overview = {
             "total_customers": total_customers,
             "total_delivery_staff": total_staff,
             "total_bookings": total_bookings,
             "pending_bookings": pending_bookings,
             "in_stock_cylinders": in_stock_cylinders
         }
+        cache.set(cache_key, overview, ttl_seconds=120)
+        return overview
 
 class AuditorService:
     @staticmethod
-    def get_reconciliation_reports(db: Session):
-        bookings = db.query(Booking).order_by(Booking.id.desc()).all()
+    def get_reconciliation_reports(db: Session, skip: int = 0, limit: int = 50):
+        bookings = db.query(Booking).order_by(Booking.id.desc()).offset(skip).limit(limit).all()
         report = []
 
         for b in bookings:
@@ -544,12 +703,12 @@ class AuditorService:
         return report
 
     @staticmethod
-    def get_discrepancy_evidence(db: Session):
+    def get_discrepancy_evidence(db: Session, limit: int = 50):
         discrepancies = []
 
         unpaid_deliveries = db.query(Booking).filter(
             Booking.status == BookingStatus.DELIVERED
-        ).all()
+        ).limit(limit).all()
         for b in unpaid_deliveries:
             payment = b.payment
             if not payment or payment.payment_status != PaymentStatus.COLLECTED:
@@ -573,7 +732,7 @@ class AuditorService:
 
         cancelled_with_money = db.query(Booking).filter(
             Booking.status == BookingStatus.CANCELLED
-        ).all()
+        ).limit(limit).all()
         for b in cancelled_with_money:
             if b.payment and b.payment.payment_status == PaymentStatus.COLLECTED:
                 discrepancies.append({
@@ -588,7 +747,7 @@ class AuditorService:
         failed_executions = db.query(DeliveryExecution).filter(
             DeliveryExecution.outcome != DeliveryOutcome.DELIVERED_SUCCESS,
             (DeliveryExecution.failure_reason == None) | (DeliveryExecution.failure_reason == "")
-        ).all()
+        ).limit(limit).all()
         for fe in failed_executions:
             discrepancies.append({
                 "issue_type": "UNDOCUMENTED_DELIVERY_FAILURE",
@@ -601,7 +760,7 @@ class AuditorService:
 
         quota_exceeded_profiles = db.query(CustomerProfile).filter(
             CustomerProfile.quota_used_this_year > CustomerProfile.cylinder_quota_limit
-        ).all()
+        ).limit(limit).all()
         for cp in quota_exceeded_profiles:
             discrepancies.append({
                 "issue_type": "QUOTA_EXCEEDED",
@@ -612,10 +771,15 @@ class AuditorService:
                 "severity": "MEDIUM"
             })
 
-        return discrepancies
+        return discrepancies[:limit]
 
     @staticmethod
     def get_financial_summaries(db: Session):
+        cache_key = "reports:financial_summary"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
         total_bookings = db.query(Booking).count()
         total_sales_value = db.query(func.coalesce(func.sum(Booking.net_payable), 0.0)).scalar()
 
@@ -636,7 +800,7 @@ class AuditorService:
         total_corrections_count = len(corrections)
         net_variance = sum(c.corrected_amount - c.original_amount for c in corrections)
 
-        return {
+        summary = {
             "total_bookings": total_bookings,
             "total_sales_value": float(total_sales_value),
             "total_collected_amount": float(total_collected),
@@ -645,11 +809,13 @@ class AuditorService:
             "total_corrections_count": total_corrections_count,
             "net_correction_variance": float(net_variance)
         }
+        cache.set(cache_key, summary, ttl_seconds=180)
+        return summary
 
     @staticmethod
-    def get_financial_corrections(db: Session):
-        return db.query(FinancialCorrection).order_by(FinancialCorrection.id.desc()).all()
+    def get_financial_corrections(db: Session, skip: int = 0, limit: int = 50):
+        return db.query(FinancialCorrection).order_by(FinancialCorrection.id.desc()).offset(skip).limit(limit).all()
 
     @staticmethod
-    def get_audit_logs(db: Session):
-        return db.query(AuditLog).order_by(AuditLog.id.desc()).all()
+    def get_audit_logs(db: Session, skip: int = 0, limit: int = 50):
+        return db.query(AuditLog).order_by(AuditLog.id.desc()).offset(skip).limit(limit).all()

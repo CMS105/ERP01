@@ -8,7 +8,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    DATABASE_URL: str = "sqlite:///./lpgerp.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/lpg_erp"
     SECRET_KEY: str = "student-secret-key-hackathon-2026"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440

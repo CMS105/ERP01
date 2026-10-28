@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Union
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 from app.models import (
     User, UserRole, CustomerProfile, StaffProfile, CylinderInventory,
@@ -309,7 +309,7 @@ Respond in {data.language}. Keep it under 3 sentences."""
         if category:
             query = query.filter(SupportTicket.category.ilike(f"%{category}%"))
         return query.order_by(
-            func.case(
+            case(
                 (SupportTicket.priority == 'CRITICAL', 1),
                 (SupportTicket.priority == 'HIGH', 2),
                 (SupportTicket.priority == 'NORMAL', 3),
@@ -347,7 +347,7 @@ Respond in {data.language}. Keep it under 3 sentences."""
         db.refresh(ticket)
         log_audit(
             db, admin_user, "UPDATE_TICKET_ADMIN", "SupportTicket", str(ticket.id),
-            f"Admin {admin_user.username} updated ticket {ticket.ticket_number} (status={ticket.status.value}, priority={ticket.priority})"
+            f"Admin {admin_user.full_name or admin_user.email} updated ticket {ticket.ticket_number} (status={ticket.status.value}, priority={ticket.priority})"
         )
         return ticket
 
@@ -649,6 +649,12 @@ class ChatbotService:
                 return f"Your most recent payment record is Transaction #{p['transaction_id']} for ₹{p['amount']} via {p['method']} with status: {p['status']}. Has this resolved your issue?"
             return "No recent payment records found for your account. Please share your transaction reference if you were debited. Has this resolved your issue?"
 
+        if "quota" in lowered or "limit" in lowered or "subsid" in lowered:
+            used = customer.get("quota_used", 0)
+            total = customer.get("quota_total", 12)
+            rem = max(0, total - used)
+            return f"You have used {used} of your {total} subsidized cylinders for this fiscal year ({rem} remaining). Has this resolved your issue?"
+
         if "delivery" in lowered or "cylinder" in lowered or "boy" in lowered:
             if pending_del:
                 return f"You have an active delivery confirmation request #{pending_del['request_id']} for Booking #{pending_del['booking_id']} with ₹{pending_del['amount_due']} due. Please approve or reject via your delivery screen. Has this resolved your issue?"
@@ -656,12 +662,6 @@ class ChatbotService:
                 b = bookings[0]
                 return f"Your latest booking #{b.get('booking_number', b['id'])} ({b['cylinder_type']}) has status: {b['status']}. Scheduled date: {b.get('scheduled_date', 'N/A')}. Has this resolved your issue?"
             return "You have no active cylinder deliveries in progress right now. Would you like to book a refill? Has this resolved your issue?"
-
-        if "quota" in lowered or "refill" in lowered or "booking" in lowered:
-            used = customer.get("quota_used", 0)
-            total = customer.get("quota_total", 12)
-            rem = max(0, total - used)
-            return f"You have used {used} of your {total} subsidized cylinders for this fiscal year ({rem} remaining). Has this resolved your issue?"
 
         return "Thank you for contacting LPG Customer Care. I have verified your account and recent records. Please let me know if you would like me to connect you with an admin support agent. Has this resolved your issue?"
 

@@ -227,7 +227,7 @@ def test_admin_ticket_lifecycle_and_rbac(client, seed_data, db_session):
         headers=admin_headers
     )
     assert assign_res.status_code == 200
-    assert assign_res.json()["assigned_to_id"] == seed_data["delivery_boy"].id
+    assert assign_res.json()["assigned_staff_id"] == seed_data["delivery_boy"].id
     assert assign_res.json()["status"] == "IN_PROGRESS"
 
     # 7. Admin updates ticket resolution notes and marks RESOLVED

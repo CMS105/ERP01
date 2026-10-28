@@ -1,6 +1,7 @@
 import io
 import re
 from datetime import datetime
+from typing import Any, Optional, List, Dict, Tuple
 
 try:
     import pytesseract

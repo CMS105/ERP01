@@ -1,10 +1,10 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, EmailStr, ConfigDict
 from app.models import (
     UserRole, BookingStatus, DeliveryOutcome, PaymentStatus,
     PaymentMethod, CylinderStatus, FindingReviewStatus, FindingSeverity,
-    SupportTicketStatus
+    SupportTicketStatus, DeliveryRequestStatus
 )
 
 class Token(BaseModel):
@@ -139,6 +139,7 @@ class DeliveryExecutionOut(BaseModel):
     synced_at: datetime
     empty_cylinder_returned_serial: Optional[str] = None
     failure_reason: Optional[str] = None
+    transaction_reference: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -363,7 +364,9 @@ class SupportMessageOut(BaseModel):
 class SupportTicketCreate(BaseModel):
     category: str
     description: str
+    booking_id: Optional[int] = None
     transaction_id: Optional[str] = None
+    priority: Optional[str] = "NORMAL"
     language: str = "English"
     offline_sync_id: Optional[str] = None
 
@@ -374,17 +377,129 @@ class SupportTicketOut(BaseModel):
     id: int
     ticket_number: str
     customer_id: int
+    booking_id: Optional[int] = None
     transaction_id: Optional[str] = None
     category: str
     description: str
+    priority: str = "NORMAL"
     language: str
     status: SupportTicketStatus
     ai_response: Optional[str] = None
     escalation_reason: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    conversation_context: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     assigned_staff_id: Optional[int] = None
     messages: List[SupportMessageOut] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+class TicketUpdateAdmin(BaseModel):
+    status: Optional[SupportTicketStatus] = None
+    priority: Optional[str] = None
+    assigned_staff_id: Optional[int] = None
+    resolution_notes: Optional[str] = None
+
+class TicketAssignAdmin(BaseModel):
+    staff_user_id: int
+    notes: Optional[str] = None
+
+class ChatbotMessageRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    language: Optional[str] = "English"
+
+class ChatbotMessageResponse(BaseModel):
+    session_id: str
+    response: str
+    assistant_message: Optional[str] = None
+    resolution_state: str  # "UNRESOLVED", "PROPOSED", "RESOLVED", "ESCALATED"
+    escalation_state: str = "NONE"  # "NONE", "SUGGESTED", "ESCALATED"
+    escalated: bool = False
+    requires_confirmation: bool = False
+    ticket_id: Optional[Union[str, int]] = None
+    ticket_number: Optional[str] = None
+    ticket_status: Optional[str] = None
+    priority: Optional[str] = None
+    suggested_actions: List[str] = []
+    is_safety_emergency: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ChatMessageOut(BaseModel):
+    id: int
+    sender_role: str
+    message: str
+    metadata_json: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ChatSessionHistoryOut(BaseModel):
+    session_id: str
+    customer_id: int
+    status: str
+    unresolved_attempts: int
+    associated_ticket_id: Optional[int] = None
+    ticket_number: Optional[str] = None
+    messages: List[ChatMessageOut] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+class DeliveryConfirmationCreate(BaseModel):
+    assignment_id: Optional[int] = None
+    booking_id: Optional[int] = None
+    cylinder_serial: Optional[str] = None
+    notes: Optional[str] = None
+
+class DeliveryRejectRequest(BaseModel):
+    rejection_reason: Optional[str] = "Customer rejected delivery"
+
+class DeliveryConfirmationRequestOut(BaseModel):
+    id: int
+    request_id: str
+    booking_id: int
+    booking_number: Optional[str] = None
+    customer_id: int
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_address: Optional[str] = None
+    delivery_partner_id: int
+    delivery_partner_name: Optional[str] = None
+    delivery_partner_phone: Optional[str] = None
+    assignment_id: int
+    amount_due: float
+    cylinder_serial: Optional[str] = None
+    cylinder_type: str
+    status: str
+    rejection_reason: Optional[str] = None
+    notes: Optional[str] = None
+    transaction_reference: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class DeliveryTransactionOut(BaseModel):
+    id: int
+    transaction_reference: str
+    confirmation_request_id: int
+    request_id: Optional[str] = None
+    booking_id: int
+    booking_number: Optional[str] = None
+    customer_id: int
+    customer_name: Optional[str] = None
+    delivery_partner_id: int
+    delivery_partner_name: Optional[str] = None
+    assignment_id: int
+    delivery_execution_id: Optional[int] = None
+    payment_record_id: Optional[int] = None
+    amount: float
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 

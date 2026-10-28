@@ -1,7 +1,8 @@
 import uuid
 import re
+import secrets
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -10,13 +11,19 @@ from app.models import (
     User, UserRole, CustomerProfile, StaffProfile, CylinderInventory,
     Booking, BookingStatus, DeliveryAssignment, DeliveryExecution, DeliveryOutcome,
     PaymentRecord, PaymentStatus, PaymentMethod, CylinderStatus,
-    FinancialCorrection, AuditLog, SupportTicket, SupportTicketStatus, SupportMessage
+    FinancialCorrection, AuditLog, SupportTicket, SupportTicketStatus, SupportMessage,
+    DeliveryConfirmationRequest, DeliveryTransaction, DeliveryRequestStatus,
+    ChatSession, ChatMessage
 )
 from app.schemas import (
     BookingCreate, DeliveryOutcomeRequest, PaymentCollectRequest,
     OfflineSyncBatchRequest, OfflineSyncBatchResponse,
     FinancialCorrectionRequest, CylinderInventoryCreate, CylinderInventoryUpdate,
-    UserCreate, CustomerProfileUpdate, SupportTicketCreate, SupportTicketEscalate
+    UserCreate, CustomerProfileUpdate, SupportTicketCreate, SupportTicketEscalate,
+    DeliveryConfirmationCreate, DeliveryRejectRequest,
+    DeliveryConfirmationRequestOut, DeliveryTransactionOut,
+    SupportTicketOut, TicketUpdateAdmin, TicketAssignAdmin,
+    ChatbotMessageRequest, ChatbotMessageResponse, ChatMessageOut, ChatSessionHistoryOut
 )
 from app.auth import hash_password
 from app.cache import cache
@@ -184,69 +191,868 @@ class CustomerService:
         ).order_by(PaymentRecord.id.desc()).offset(skip).limit(limit).all()
 
 import os
-import google.generativeai as genai
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "MOCK_KEY"))
+from app.config import settings
+
+def get_gemini_client():
+    gemini_key = os.environ.get("GEMINI_API_KEY") or settings.GEMINI_API_KEY
+    if not gemini_key or gemini_key == "MOCK_KEY":
+        return None
+    try:
+        from google import genai
+        return genai.Client(api_key=gemini_key)
+    except Exception:
+        return None
 
 class SupportTicketService:
     @staticmethod
-    def create_ticket(db: Session, current_user: User, data: SupportTicketCreate):
+    def create_ticket(db: Session, current_user: User, data: SupportTicketCreate) -> SupportTicket:
         ticket_number = f"TKT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
-
         ai_response_text = None
-        if os.environ.get("GEMINI_API_KEY"):
-            try:
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                prompt = f"""
-                You are a helpful customer support assistant for an LPG delivery service in India.
-                The customer has raised the following issue:
-                Category: {data.category}
-                Description: {data.description}
-                Transaction ID: {data.transaction_id or 'None provided'}
-                Language Preference: {data.language}
 
-                Provide a short, empathetic explanation of what might have happened and clear next steps.
-                Do not make promises about refunds or specific delivery times.
-                Respond ONLY in {data.language}. If {data.language} is Kannada, use proper Kannada script.
-                Keep it under 3 sentences.
-                """
-                response = model.generate_content(prompt)
+        client = get_gemini_client()
+        if client:
+            try:
+                prompt = f"""You are a helpful customer support assistant for an LPG delivery service in India.
+The customer has raised the following issue:
+Category: {data.category}
+Description: {data.description}
+Booking ID: {data.booking_id or 'None provided'}
+Transaction ID: {data.transaction_id or 'None provided'}
+Priority: {data.priority or 'NORMAL'}
+Language Preference: {data.language}
+
+Provide a short, empathetic explanation and clear, safe next steps.
+Do not make unauthorized promises regarding refunds or instant delivery.
+Respond in {data.language}. Keep it under 3 sentences."""
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=prompt
+                )
                 ai_response_text = response.text
-            except Exception as e:
-                ai_response_text = f"We are currently experiencing high volume, but your issue has been recorded. (System Error: {e})"
+            except Exception:
+                ai_response_text = "Thank you for reaching out. We have logged your issue and our support team will assist you shortly."
         else:
-             ai_response_text = "Thank you for reaching out. We have received your issue and our team will look into it shortly."
+            ai_response_text = "Thank you for reaching out. We have logged your issue and our support team will assist you shortly."
 
         ticket = SupportTicket(
             ticket_number=ticket_number,
             customer_id=current_user.id,
+            booking_id=data.booking_id,
             transaction_id=data.transaction_id,
             category=data.category,
             description=data.description,
-            language=data.language,
+            priority=data.priority or "NORMAL",
+            language=data.language or "en",
             status=SupportTicketStatus.AI_ASSISTED if ai_response_text else SupportTicketStatus.OPEN,
-            ai_response=ai_response_text
+            ai_response=ai_response_text,
+            resolution_notes=data.resolution_notes,
+            conversation_context=data.conversation_context
         )
         db.add(ticket)
         db.commit()
         db.refresh(ticket)
-        log_audit(db, current_user, "CREATE_TICKET", "SupportTicket", str(ticket.id), f"Created ticket {ticket_number}")
+        log_audit(db, current_user, "CREATE_TICKET", "SupportTicket", str(ticket.id), f"Created ticket {ticket_number} with priority {ticket.priority}")
         return ticket
 
     @staticmethod
-    def get_tickets(db: Session, current_user: User):
-        return db.query(SupportTicket).filter(SupportTicket.customer_id == current_user.id).order_by(SupportTicket.id.desc()).all()
+    def get_tickets(db: Session, current_user: User, skip: int = 0, limit: int = 50) -> List[SupportTicket]:
+        return db.query(SupportTicket).filter(
+            SupportTicket.customer_id == current_user.id
+        ).order_by(SupportTicket.id.desc()).offset(skip).limit(limit).all()
 
     @staticmethod
-    def escalate_ticket(db: Session, current_user: User, ticket_id: int, data: SupportTicketEscalate):
-        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.customer_id == current_user.id).first()
+    def get_ticket_by_id(db: Session, current_user: User, ticket_id: int) -> SupportTicket:
+        ticket = db.query(SupportTicket).filter(
+            SupportTicket.id == ticket_id,
+            SupportTicket.customer_id == current_user.id
+        ).first()
         if not ticket:
-            raise HTTPException(status_code=404, detail="Ticket not found")
+            raise HTTPException(status_code=404, detail="Support ticket not found")
+        return ticket
+
+    @staticmethod
+    def escalate_ticket(db: Session, current_user: User, ticket_id: int, data: SupportTicketEscalate) -> SupportTicket:
+        ticket = db.query(SupportTicket).filter(
+            SupportTicket.id == ticket_id,
+            SupportTicket.customer_id == current_user.id
+        ).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Support ticket not found")
+
         ticket.status = SupportTicketStatus.WAITING_FOR_STAFF
         ticket.escalation_reason = data.escalation_reason
+        if ticket.priority == "NORMAL":
+            ticket.priority = "HIGH"
         db.commit()
         db.refresh(ticket)
-        log_audit(db, current_user, "ESCALATE_TICKET", "SupportTicket", str(ticket.id), "Escalated to human staff")
+        log_audit(db, current_user, "ESCALATE_TICKET", "SupportTicket", str(ticket.id), f"Escalated ticket {ticket.ticket_number} to human staff")
         return ticket
+
+    @staticmethod
+    def list_admin_tickets(
+        db: Session,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+        category: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
+    ) -> List[SupportTicket]:
+        query = db.query(SupportTicket)
+        if status:
+            try:
+                status_enum = SupportTicketStatus(status.upper())
+                query = query.filter(SupportTicket.status == status_enum)
+            except ValueError:
+                pass
+        if priority:
+            query = query.filter(SupportTicket.priority == priority.upper())
+        if category:
+            query = query.filter(SupportTicket.category.ilike(f"%{category}%"))
+        return query.order_by(
+            func.case(
+                (SupportTicket.priority == 'CRITICAL', 1),
+                (SupportTicket.priority == 'HIGH', 2),
+                (SupportTicket.priority == 'NORMAL', 3),
+                else_=4
+            ),
+            SupportTicket.id.desc()
+        ).offset(skip).limit(limit).all()
+
+    @staticmethod
+    def get_admin_ticket(db: Session, ticket_id: int) -> SupportTicket:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Support ticket not found")
+        return ticket
+
+    @staticmethod
+    def update_admin_ticket(db: Session, admin_user: User, ticket_id: int, data: TicketUpdateAdmin) -> SupportTicket:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Support ticket not found")
+
+        if data.status:
+            try:
+                ticket.status = SupportTicketStatus(data.status.upper())
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid status value: {data.status}")
+        if data.priority:
+            ticket.priority = data.priority.upper()
+        if data.resolution_notes is not None:
+            ticket.resolution_notes = data.resolution_notes
+        if data.assigned_staff_id is not None:
+            ticket.assigned_staff_id = data.assigned_staff_id
+
+        db.commit()
+        db.refresh(ticket)
+        log_audit(
+            db, admin_user, "UPDATE_TICKET_ADMIN", "SupportTicket", str(ticket.id),
+            f"Admin {admin_user.username} updated ticket {ticket.ticket_number} (status={ticket.status.value}, priority={ticket.priority})"
+        )
+        return ticket
+
+    @staticmethod
+    def assign_admin_ticket(db: Session, admin_user: User, ticket_id: int, data: TicketAssignAdmin) -> SupportTicket:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Support ticket not found")
+
+        staff_user = db.query(User).filter(User.id == data.staff_user_id).first()
+        if not staff_user:
+            raise HTTPException(status_code=404, detail="Assigned staff user not found")
+
+        ticket.assigned_staff_id = data.staff_user_id
+        if ticket.status in [SupportTicketStatus.OPEN, SupportTicketStatus.WAITING_FOR_STAFF, SupportTicketStatus.AI_ASSISTED]:
+            ticket.status = SupportTicketStatus.IN_PROGRESS
+
+        db.commit()
+        db.refresh(ticket)
+        log_audit(
+            db, admin_user, "ASSIGN_TICKET", "SupportTicket", str(ticket.id),
+            f"Ticket {ticket.ticket_number} assigned to staff ID {data.staff_user_id}"
+        )
+        return ticket
+
+    @staticmethod
+    def get_admin_queue_summary(db: Session) -> Dict[str, Any]:
+        total_tickets = db.query(func.count(SupportTicket.id)).scalar() or 0
+        waiting_for_staff = db.query(func.count(SupportTicket.id)).filter(
+            SupportTicket.status == SupportTicketStatus.WAITING_FOR_STAFF
+        ).scalar() or 0
+        in_progress = db.query(func.count(SupportTicket.id)).filter(
+            SupportTicket.status == SupportTicketStatus.IN_PROGRESS
+        ).scalar() or 0
+        open_tickets = db.query(func.count(SupportTicket.id)).filter(
+            SupportTicket.status == SupportTicketStatus.OPEN
+        ).scalar() or 0
+        critical_count = db.query(func.count(SupportTicket.id)).filter(
+            SupportTicket.priority == "CRITICAL",
+            SupportTicket.status.in_([SupportTicketStatus.OPEN, SupportTicketStatus.WAITING_FOR_STAFF, SupportTicketStatus.IN_PROGRESS])
+        ).scalar() or 0
+        high_count = db.query(func.count(SupportTicket.id)).filter(
+            SupportTicket.priority == "HIGH",
+            SupportTicket.status.in_([SupportTicketStatus.OPEN, SupportTicketStatus.WAITING_FOR_STAFF, SupportTicketStatus.IN_PROGRESS])
+        ).scalar() or 0
+
+        return {
+            "total_tickets": total_tickets,
+            "waiting_for_staff": waiting_for_staff,
+            "in_progress": in_progress,
+            "open_tickets": open_tickets,
+            "critical_unresolved": critical_count,
+            "high_unresolved": high_count
+        }
+
+
+SAFETY_EMERGENCY_GUIDANCE = (
+    "EMERGENCY SAFETY INSTRUCTION: Suspected LPG leak or hazard detected!\n"
+    "1. Turn off the cylinder regulator valve immediately.\n"
+    "2. Put out all open flames, candles, or incense.\n"
+    "3. DO NOT operate any electrical switches, appliances, or mobile phones near the leak.\n"
+    "4. Open all doors and windows to disperse the gas.\n"
+    "5. Evacuate everyone from the premises immediately.\n"
+    "6. Call the 24x7 LPG Emergency Helpline: 1906 or Fire Emergency: 101 from a safe location."
+)
+
+GAS_LEAK_KEYWORDS = [
+    "gas leak", "smell gas", "lpg leak", "gas leakage", "cylinder leaking",
+    "cylinder hiss", "fire", "blast", "explosion", "spark", "cylinder burning",
+    "gas smell", "smelling gas", "regulator leak"
+]
+
+RESOLUTION_CONFIRMATION_KEYWORDS = [
+    "yes", "yes it did", "resolved", "it worked", "fixed", "all good",
+    "thank you", "thanks resolved", "solved", "no further help needed",
+    "yes resolved", "it is resolved", "issue resolved", "working now"
+]
+
+RESOLUTION_REJECTION_KEYWORDS = [
+    "no", "not resolved", "didn't work", "did not work", "still not working",
+    "still an issue", "still having issue", "didn't solve", "no it did not",
+    "problem persists", "not working", "still broken", "doesn't work"
+]
+
+HUMAN_AGENT_KEYWORDS = [
+    "human", "agent", "executive", "representative", "operator", "person",
+    "talk to human", "speak to human", "connect to agent", "customer care",
+    "talk to someone", "admin", "speak with agent", "transfer to human"
+]
+
+
+class ChatbotService:
+    @staticmethod
+    def is_gas_leak_emergency(message: str) -> bool:
+        lowered = message.lower()
+        return any(keyword in lowered for keyword in GAS_LEAK_KEYWORDS)
+
+    @staticmethod
+    def is_resolution_confirmation(message: str) -> bool:
+        cleaned = re.sub(r'[^\w\s]', '', message.lower()).strip()
+        tokens = cleaned.split()
+        if cleaned in RESOLUTION_CONFIRMATION_KEYWORDS:
+            return True
+        if tokens and tokens[0] in ["yes", "yeah", "yep", "solved", "fixed"]:
+            return True
+        return any(keyword in cleaned for keyword in ["it worked", "all good", "thank you", "issue resolved", "problem solved"])
+
+    @staticmethod
+    def is_resolution_rejection(message: str) -> bool:
+        cleaned = re.sub(r'[^\w\s]', '', message.lower()).strip()
+        tokens = cleaned.split()
+        if cleaned in ["no", "nope", "not yet", "not really", "didnt work", "did not work"]:
+            return True
+        if tokens and tokens[0] in ["no", "nope"]:
+            return True
+        return any(keyword in cleaned for keyword in RESOLUTION_REJECTION_KEYWORDS)
+
+    @staticmethod
+    def is_human_agent_requested(message: str) -> bool:
+        lowered = message.lower()
+        return any(keyword in lowered for keyword in HUMAN_AGENT_KEYWORDS)
+
+    @staticmethod
+    def get_or_create_session(db: Session, current_user: User, session_id: Optional[str] = None) -> ChatSession:
+        if session_id:
+            session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
+            if not session:
+                raise HTTPException(status_code=404, detail="Chat session not found")
+            if session.customer_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Access denied to this chat session")
+            return session
+
+        new_session = ChatSession(
+            session_id=f"CS-{uuid.uuid4().hex[:12].upper()}",
+            customer_id=current_user.id,
+            status="IN_PROGRESS",
+            unresolved_attempts=0
+        )
+        db.add(new_session)
+        db.commit()
+        db.refresh(new_session)
+        return new_session
+
+    @staticmethod
+    def build_grounding_context(db: Session, current_user: User) -> Dict[str, Any]:
+        profile = db.query(CustomerProfile).filter(CustomerProfile.user_id == current_user.id).first()
+        bookings = db.query(Booking).filter(
+            Booking.customer_id == current_user.id
+        ).order_by(Booking.id.desc()).limit(3).all()
+
+        payments = db.query(PaymentRecord).filter(
+            PaymentRecord.customer_id == current_user.id
+        ).order_by(PaymentRecord.id.desc()).limit(3).all()
+
+        tickets = db.query(SupportTicket).filter(
+            SupportTicket.customer_id == current_user.id
+        ).order_by(SupportTicket.id.desc()).limit(3).all()
+
+        pending_delivery_req = db.query(DeliveryConfirmationRequest).filter(
+            DeliveryConfirmationRequest.customer_id == current_user.id,
+            DeliveryConfirmationRequest.status == DeliveryRequestStatus.REQUESTED
+        ).first()
+
+        context_data = {
+            "customer": {
+                "id": current_user.id,
+                "name": current_user.full_name if current_user.full_name else current_user.email,
+                "phone": current_user.phone if current_user.phone else "N/A",
+                "consumer_number": profile.consumer_number if profile else "N/A",
+                "quota_used": profile.quota_used_this_year if profile else 0,
+                "quota_total": profile.cylinder_quota_limit if profile else 12,
+                "connection_type": profile.connection_type if profile else "14.2kg Domestic"
+            },
+            "recent_bookings": [
+                {
+                    "id": b.id,
+                    "booking_number": b.booking_number,
+                    "date": b.created_at.strftime("%Y-%m-%d %H:%M") if b.created_at else "N/A",
+                    "status": b.status.value,
+                    "cylinder_type": b.cylinder_type,
+                    "amount": float(b.net_payable) if b.net_payable is not None else 0.0,
+                    "scheduled_date": b.scheduled_date
+                }
+                for b in bookings
+            ],
+            "recent_payments": [
+                {
+                    "id": p.id,
+                    "transaction_id": p.transaction_id,
+                    "amount": float(p.amount),
+                    "method": p.payment_method.value,
+                    "status": p.status.value,
+                    "date": p.payment_date.strftime("%Y-%m-%d %H:%M") if p.payment_date else "N/A"
+                }
+                for p in payments
+            ],
+            "support_tickets": [
+                {
+                    "id": t.id,
+                    "ticket_number": t.ticket_number,
+                    "category": t.category,
+                    "status": t.status.value,
+                    "priority": t.priority,
+                    "created_at": t.created_at.strftime("%Y-%m-%d") if t.created_at else "N/A"
+                }
+                for t in tickets
+            ],
+            "active_pending_delivery_confirmation": {
+                "request_id": pending_delivery_req.request_id,
+                "booking_id": pending_delivery_req.booking_id,
+                "amount_due": float(pending_delivery_req.amount_due)
+            } if pending_delivery_req else None
+        }
+        return context_data
+
+    @staticmethod
+    def escalate_chat_to_ticket(
+        db: Session,
+        current_user: User,
+        session: ChatSession,
+        category: str,
+        summary: str,
+        priority: str = "NORMAL",
+        escalation_reason: str = "Chatbot automatic escalation",
+        booking_id: Optional[int] = None
+    ) -> SupportTicket:
+        open_ticket = db.query(SupportTicket).filter(
+            SupportTicket.customer_id == current_user.id,
+            SupportTicket.status.in_([
+                SupportTicketStatus.OPEN,
+                SupportTicketStatus.AI_ASSISTED,
+                SupportTicketStatus.WAITING_FOR_STAFF,
+                SupportTicketStatus.IN_PROGRESS
+            ])
+        ).order_by(SupportTicket.id.desc()).first()
+
+        history_messages = db.query(ChatMessage).filter(
+            ChatMessage.session_id == session.session_id
+        ).order_by(ChatMessage.id.asc()).limit(10).all()
+
+        formatted_convo = "\n".join([f"{m.sender_role.upper()}: {m.message}" for m in history_messages])
+
+        if open_ticket:
+            ticket = open_ticket
+            ticket.status = SupportTicketStatus.WAITING_FOR_STAFF
+            ticket.escalation_reason = escalation_reason
+            if priority == "CRITICAL" or (priority == "HIGH" and ticket.priority != "CRITICAL"):
+                ticket.priority = priority
+            if formatted_convo:
+                prev_context = ticket.conversation_context or ""
+                ticket.conversation_context = f"{prev_context}\n--- Escalation Update ---\n{formatted_convo}".strip()
+            if booking_id and not ticket.booking_id:
+                ticket.booking_id = booking_id
+        else:
+            ticket_number = f"TKT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
+            ticket = SupportTicket(
+                ticket_number=ticket_number,
+                customer_id=current_user.id,
+                booking_id=booking_id,
+                category=category,
+                description=summary,
+                priority=priority,
+                status=SupportTicketStatus.WAITING_FOR_STAFF,
+                escalation_reason=escalation_reason,
+                conversation_context=formatted_convo
+            )
+            db.add(ticket)
+
+        db.flush()
+        session.associated_ticket_id = ticket.id
+        session.status = "ESCALATED"
+
+        db.commit()
+        db.refresh(ticket)
+        log_audit(
+            db, current_user, "CHATBOT_ESCALATE_TICKET", "SupportTicket", str(ticket.id),
+            f"Escalated session {session.session_id} to ticket {ticket.ticket_number} (priority={ticket.priority})"
+        )
+        return ticket
+
+    @staticmethod
+    def generate_grounded_fallback_response(message: str, grounding_data: Dict[str, Any]) -> str:
+        lowered = message.lower()
+        customer = grounding_data.get("customer", {})
+        bookings = grounding_data.get("recent_bookings", [])
+        payments = grounding_data.get("recent_payments", [])
+        tickets = grounding_data.get("support_tickets", [])
+        pending_del = grounding_data.get("active_pending_delivery_confirmation")
+
+        if "ticket" in lowered:
+            if tickets:
+                t = tickets[0]
+                return f"Your latest support ticket is #{t['ticket_number']} for {t['category']} with status: {t['status']} (Priority: {t['priority']}). Has this resolved your issue?"
+            return "You do not have any open support tickets at the moment. If you are experiencing an issue, please let me know details so I can log one for you. Has this resolved your issue?"
+
+        if "pay" in lowered or "money" in lowered or "receipt" in lowered:
+            if payments:
+                p = payments[0]
+                return f"Your most recent payment record is Transaction #{p['transaction_id']} for ₹{p['amount']} via {p['method']} with status: {p['status']}. Has this resolved your issue?"
+            return "No recent payment records found for your account. Please share your transaction reference if you were debited. Has this resolved your issue?"
+
+        if "delivery" in lowered or "cylinder" in lowered or "boy" in lowered:
+            if pending_del:
+                return f"You have an active delivery confirmation request #{pending_del['request_id']} for Booking #{pending_del['booking_id']} with ₹{pending_del['amount_due']} due. Please approve or reject via your delivery screen. Has this resolved your issue?"
+            if bookings:
+                b = bookings[0]
+                return f"Your latest booking #{b.get('booking_number', b['id'])} ({b['cylinder_type']}) has status: {b['status']}. Scheduled date: {b.get('scheduled_date', 'N/A')}. Has this resolved your issue?"
+            return "You have no active cylinder deliveries in progress right now. Would you like to book a refill? Has this resolved your issue?"
+
+        if "quota" in lowered or "refill" in lowered or "booking" in lowered:
+            used = customer.get("quota_used", 0)
+            total = customer.get("quota_total", 12)
+            rem = max(0, total - used)
+            return f"You have used {used} of your {total} subsidized cylinders for this fiscal year ({rem} remaining). Has this resolved your issue?"
+
+        return "Thank you for contacting LPG Customer Care. I have verified your account and recent records. Please let me know if you would like me to connect you with an admin support agent. Has this resolved your issue?"
+
+    @staticmethod
+    def call_gemini_chat(prompt: str, grounding_data: Dict[str, Any], conversation_history: List[ChatMessage]) -> Optional[str]:
+        client = get_gemini_client()
+        if not client:
+            return None
+
+        recent_dialogue = "\n".join([f"{m.sender_role.upper()}: {m.message}" for m in conversation_history[-6:]])
+
+        system_instruction = f"""You are the official AI Customer Support and Complaint Resolution Agent for LPG Smart ERP.
+Your role: Answer customer questions, troubleshoot LPG cylinder refill/delivery/payment issues, and assist customers.
+
+STRICT FACTUAL GROUNDING RULES:
+1. ONLY state facts and numbers that appear in the customer's verified database records below.
+2. NEVER hallucinate or invent booking IDs, payment amounts, delivery times, or ticket statuses.
+3. If an answer cannot be determined from the records, clearly say so and offer human escalation.
+4. Keep answers concise, empathetic, and professional (under 4 sentences).
+5. At the very end of every troubleshooting proposal, you MUST include the exact question:
+   "Has this resolved your issue?"
+
+VERIFIED CUSTOMER RECORDS (GROUND TRUTH):
+Customer Info: {grounding_data.get('customer')}
+Recent Bookings: {grounding_data.get('recent_bookings')}
+Recent Payments: {grounding_data.get('recent_payments')}
+Support Tickets: {grounding_data.get('support_tickets')}
+Active Delivery Confirmation: {grounding_data.get('active_pending_delivery_confirmation')}
+
+RECENT CONVERSATION HISTORY:
+{recent_dialogue}
+"""
+        full_content = f"{system_instruction}\n\nCustomer Query: {prompt}"
+
+        try:
+            response = client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=full_content
+            )
+            return response.text
+        except Exception:
+            return None
+
+    @staticmethod
+    def process_message(db: Session, current_user: User, request_data: ChatbotMessageRequest) -> ChatbotMessageResponse:
+        message = (request_data.message or "").strip()
+        if not message:
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        if len(message) > 2000:
+            raise HTTPException(status_code=400, detail="Message exceeds maximum limit of 2000 characters")
+
+        session = ChatbotService.get_or_create_session(db, current_user, request_data.session_id)
+
+        user_chat_msg = ChatMessage(
+            session_id=session.session_id,
+            sender_role="user",
+            message=message,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(user_chat_msg)
+        db.commit()
+
+        # 1. EMERGENCY SAFETY CHECK
+        if ChatbotService.is_gas_leak_emergency(message):
+            ticket = ChatbotService.escalate_chat_to_ticket(
+                db=db,
+                current_user=current_user,
+                session=session,
+                category="GAS_LEAK_EMERGENCY",
+                summary=f"CRITICAL SAFETY: Customer reported suspected LPG leak or hazard: '{message[:120]}'",
+                priority="CRITICAL",
+                escalation_reason="Suspected LPG leak or safety emergency reported in chat"
+            )
+            assistant_reply = (
+                f"{SAFETY_EMERGENCY_GUIDANCE}\n\n"
+                f"Emergency Support Ticket #{ticket.ticket_number} has been logged with CRITICAL priority. "
+                "Our emergency response coordinator has been alerted."
+            )
+            assistant_chat_msg = ChatMessage(
+                session_id=session.session_id,
+                sender_role="assistant",
+                message=assistant_reply,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(assistant_chat_msg)
+            session.status = "ESCALATED"
+            db.commit()
+
+            return ChatbotMessageResponse(
+                session_id=session.session_id,
+                response=assistant_reply,
+                assistant_message=assistant_reply,
+                resolution_state="ESCALATED",
+                escalation_state="ESCALATED",
+                requires_confirmation=False,
+                escalated=True,
+                ticket_id=ticket.id,
+                ticket_number=ticket.ticket_number,
+                ticket_status=ticket.status.value,
+                priority="CRITICAL",
+                suggested_actions=["Call 1906 Emergency", "Evacuate Premises", "Turn off Regulator"],
+                is_safety_emergency=True
+            )
+
+        # 2. RESOLUTION CONFIRMATION LOOP
+        if session.status == "PROPOSED_SOLUTION":
+            if ChatbotService.is_resolution_confirmation(message):
+                session.status = "RESOLVED"
+                session.unresolved_attempts = 0
+
+                if session.associated_ticket_id:
+                    ticket = db.query(SupportTicket).filter(SupportTicket.id == session.associated_ticket_id).first()
+                    if ticket and ticket.status in [SupportTicketStatus.OPEN, SupportTicketStatus.AI_ASSISTED]:
+                        ticket.status = SupportTicketStatus.RESOLVED
+                        ticket.resolution_notes = "Customer confirmed resolution via AI chatbot."
+
+                assistant_reply = (
+                    "Thank you for confirming! I am glad your issue is resolved. "
+                    "Feel free to reach out anytime if you need further help with your LPG service."
+                )
+                assistant_chat_msg = ChatMessage(
+                    session_id=session.session_id,
+                    sender_role="assistant",
+                    message=assistant_reply,
+                    created_at=datetime.now(timezone.utc)
+                )
+                db.add(assistant_chat_msg)
+                db.commit()
+
+                return ChatbotMessageResponse(
+                    session_id=session.session_id,
+                    response=assistant_reply,
+                    assistant_message=assistant_reply,
+                    resolution_state="RESOLVED",
+                    escalation_state="NONE",
+                    requires_confirmation=False,
+                    escalated=False,
+                    ticket_id=session.associated_ticket_id,
+                    ticket_number=None,
+                    ticket_status=None,
+                    priority="NORMAL",
+                    suggested_actions=["Book Refill", "View Receipts", "Check Quota"],
+                    is_safety_emergency=False
+                )
+
+            elif ChatbotService.is_resolution_rejection(message):
+                ticket = ChatbotService.escalate_chat_to_ticket(
+                    db=db,
+                    current_user=current_user,
+                    session=session,
+                    category="UNRESOLVED_TROUBLESHOOTING",
+                    summary=f"Automated troubleshooting failed. Customer reported: '{message[:120]}'",
+                    priority="HIGH",
+                    escalation_reason="Customer confirmed troubleshooting steps did not resolve the issue"
+                )
+                assistant_reply = (
+                    f"I understand the suggested solution did not resolve your issue. "
+                    f"I have escalated your case to our human support team under Ticket #{ticket.ticket_number}. "
+                    "An admin or support agent will review your records and contact you."
+                )
+                assistant_chat_msg = ChatMessage(
+                    session_id=session.session_id,
+                    sender_role="assistant",
+                    message=assistant_reply,
+                    created_at=datetime.now(timezone.utc)
+                )
+                db.add(assistant_chat_msg)
+                db.commit()
+
+                return ChatbotMessageResponse(
+                    session_id=session.session_id,
+                    response=assistant_reply,
+                    assistant_message=assistant_reply,
+                    resolution_state="ESCALATED",
+                    escalation_state="ESCALATED",
+                    requires_confirmation=False,
+                    escalated=True,
+                    ticket_id=ticket.id,
+                    ticket_number=ticket.ticket_number,
+                    ticket_status=ticket.status.value,
+                    priority=ticket.priority,
+                    suggested_actions=["View Ticket Status", "Wait for Support Agent"],
+                    is_safety_emergency=False
+                )
+
+        # 3. EXPLICIT HUMAN AGENT REQUEST
+        if ChatbotService.is_human_agent_requested(message):
+            ticket = ChatbotService.escalate_chat_to_ticket(
+                db=db,
+                current_user=current_user,
+                session=session,
+                category="HUMAN_SUPPORT_REQUEST",
+                summary=f"Customer requested human agent: '{message[:120]}'",
+                priority="HIGH",
+                escalation_reason="Customer explicitly requested a human support agent"
+            )
+            assistant_reply = (
+                f"I am routing your request to our support team. "
+                f"I have created Ticket #{ticket.ticket_number} for you. "
+                "A support representative will review your inquiry and follow up shortly."
+            )
+            assistant_chat_msg = ChatMessage(
+                session_id=session.session_id,
+                sender_role="assistant",
+                message=assistant_reply,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(assistant_chat_msg)
+            db.commit()
+
+            return ChatbotMessageResponse(
+                session_id=session.session_id,
+                response=assistant_reply,
+                assistant_message=assistant_reply,
+                resolution_state="ESCALATED",
+                escalation_state="ESCALATED",
+                requires_confirmation=False,
+                escalated=True,
+                ticket_id=ticket.id,
+                ticket_number=ticket.ticket_number,
+                ticket_status=ticket.status.value,
+                priority=ticket.priority,
+                suggested_actions=["View Ticket Details"],
+                is_safety_emergency=False
+            )
+
+        # 4. EXCEEDED UNRESOLVED ATTEMPTS ESCALATION
+        session.unresolved_attempts = (session.unresolved_attempts or 0) + 1
+        if session.unresolved_attempts >= settings.CHATBOT_MAX_UNRESOLVED_ATTEMPTS:
+            ticket = ChatbotService.escalate_chat_to_ticket(
+                db=db,
+                current_user=current_user,
+                session=session,
+                category="MAX_ATTEMPTS_ESCALATION",
+                summary=f"Issue unresolved after {session.unresolved_attempts} attempts. Query: '{message[:120]}'",
+                priority="HIGH",
+                escalation_reason=f"Exceeded max troubleshooting attempts ({settings.CHATBOT_MAX_UNRESOLVED_ATTEMPTS})"
+            )
+            assistant_reply = (
+                f"We have completed multiple troubleshooting attempts without resolution. "
+                f"To ensure you receive proper assistance, I have escalated this issue to our support team under Ticket #{ticket.ticket_number}. "
+                "Our team will review your chat history and assist you directly."
+            )
+            assistant_chat_msg = ChatMessage(
+                session_id=session.session_id,
+                sender_role="assistant",
+                message=assistant_reply,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(assistant_chat_msg)
+            db.commit()
+
+            return ChatbotMessageResponse(
+                session_id=session.session_id,
+                response=assistant_reply,
+                assistant_message=assistant_reply,
+                resolution_state="ESCALATED",
+                escalation_state="ESCALATED",
+                requires_confirmation=False,
+                escalated=True,
+                ticket_id=ticket.id,
+                ticket_number=ticket.ticket_number,
+                ticket_status=ticket.status.value,
+                priority=ticket.priority,
+                suggested_actions=["View Ticket Status"],
+                is_safety_emergency=False
+            )
+
+        # 5. GROUNDED AI QUERY RESOLUTION
+        grounding_data = ChatbotService.build_grounding_context(db, current_user)
+        history_msgs = db.query(ChatMessage).filter(
+            ChatMessage.session_id == session.session_id
+        ).order_by(ChatMessage.id.asc()).limit(8).all()
+
+        ai_reply = ChatbotService.call_gemini_chat(message, grounding_data, history_msgs)
+        if not ai_reply:
+            ai_reply = ChatbotService.generate_grounded_fallback_response(message, grounding_data)
+
+        # Enforce "Has this resolved your issue?"
+        if "Has this resolved your issue?" not in ai_reply and "has this resolved your issue" not in ai_reply.lower():
+            ai_reply = ai_reply.rstrip() + "\n\nHas this resolved your issue?"
+
+        session.status = "PROPOSED_SOLUTION"
+
+        assistant_chat_msg = ChatMessage(
+            session_id=session.session_id,
+            sender_role="assistant",
+            message=ai_reply,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(assistant_chat_msg)
+        db.commit()
+
+        return ChatbotMessageResponse(
+            session_id=session.session_id,
+            response=ai_reply,
+            assistant_message=ai_reply,
+            resolution_state="PROPOSED_SOLUTION",
+            escalation_state="NONE",
+            requires_confirmation=True,
+            escalated=False,
+            ticket_id=session.associated_ticket_id,
+            ticket_number=None,
+            ticket_status=None,
+            priority="NORMAL",
+            suggested_actions=["Yes, resolved", "No, still need help", "Connect to human agent"],
+            is_safety_emergency=False
+        )
+
+    @staticmethod
+    def get_session_history(db: Session, current_user: User, session_id: str, limit: int = 50) -> ChatSessionHistoryOut:
+        session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        if session.customer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied to this chat session")
+
+        messages = db.query(ChatMessage).filter(
+            ChatMessage.session_id == session.session_id
+        ).order_by(ChatMessage.id.asc()).limit(limit).all()
+
+        ticket_number = None
+        if session.associated_ticket_id:
+            ticket = db.query(SupportTicket).filter(SupportTicket.id == session.associated_ticket_id).first()
+            if ticket:
+                ticket_number = ticket.ticket_number
+
+        return ChatSessionHistoryOut(
+            session_id=session.session_id,
+            customer_id=session.customer_id,
+            status=session.status,
+            unresolved_attempts=session.unresolved_attempts,
+            associated_ticket_id=session.associated_ticket_id,
+            ticket_number=ticket_number,
+            messages=[
+                ChatMessageOut(
+                    id=m.id,
+                    sender_role=m.sender_role,
+                    message=m.message,
+                    metadata_json=m.metadata_json,
+                    created_at=m.created_at
+                )
+                for m in messages
+            ]
+        )
+
+    @staticmethod
+    def manual_escalate_session(
+        db: Session,
+        current_user: User,
+        session_id: str,
+        reason: Optional[str] = "Customer requested manual escalation"
+    ) -> ChatbotMessageResponse:
+        session = ChatbotService.get_or_create_session(db, current_user, session_id)
+        ticket = ChatbotService.escalate_chat_to_ticket(
+            db=db,
+            current_user=current_user,
+            session=session,
+            category="MANUAL_ESCALATION",
+            summary=f"Manual customer escalation: {reason}",
+            priority="HIGH",
+            escalation_reason=reason or "Customer requested manual escalation"
+        )
+        assistant_reply = (
+            f"Your chat session has been escalated to our human support team under Ticket #{ticket.ticket_number}. "
+            "An agent will review your conversation history and contact you shortly."
+        )
+        assistant_chat_msg = ChatMessage(
+            session_id=session.session_id,
+            sender_role="assistant",
+            message=assistant_reply,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(assistant_chat_msg)
+        db.commit()
+
+        return ChatbotMessageResponse(
+            session_id=session.session_id,
+            response=assistant_reply,
+            assistant_message=assistant_reply,
+            resolution_state="ESCALATED",
+            escalation_state="ESCALATED",
+            requires_confirmation=False,
+            escalated=True,
+            ticket_id=ticket.id,
+            ticket_number=ticket.ticket_number,
+            ticket_status=ticket.status.value,
+            priority=ticket.priority,
+            suggested_actions=["View Ticket Status"],
+            is_safety_emergency=False
+        )
 
 class DeliveryBoyService:
     @staticmethod
@@ -268,9 +1074,23 @@ class DeliveryBoyService:
         if not booking:
             raise HTTPException(status_code=404, detail="Associated booking not found")
 
+        # Check if there is an active confirmation request for this assignment
+        dcr = db.query(DeliveryConfirmationRequest).filter(
+            DeliveryConfirmationRequest.assignment_id == assignment.id
+        ).order_by(DeliveryConfirmationRequest.id.desc()).first()
+
+        if dcr:
+            if dcr.status == DeliveryRequestStatus.REQUESTED:
+                raise HTTPException(status_code=400, detail="Cannot record outcome: delivery confirmation request is awaiting customer approval")
+            elif dcr.status == DeliveryRequestStatus.REJECTED:
+                if data.outcome == DeliveryOutcome.DELIVERED_SUCCESS:
+                    raise HTTPException(status_code=400, detail="Cannot complete delivery: request was rejected by customer")
+
         existing_execution = db.query(DeliveryExecution).filter(DeliveryExecution.assignment_id == assignment.id).first()
         if existing_execution:
             raise HTTPException(status_code=400, detail="Outcome already recorded for this assignment")
+
+        tx_ref_to_link = dcr.transaction_reference if (dcr and dcr.transaction_reference) else None
 
         execution = DeliveryExecution(
             assignment_id=assignment.id,
@@ -282,9 +1102,27 @@ class DeliveryBoyService:
             synced_at=datetime.now(timezone.utc),
             empty_cylinder_returned_serial=data.empty_cylinder_returned_serial,
             customer_signature_data=data.customer_signature_data,
-            failure_reason=data.failure_reason
+            failure_reason=data.failure_reason,
+            transaction_reference=tx_ref_to_link
         )
         db.add(execution)
+        db.flush()
+
+        if dcr and dcr.status in (DeliveryRequestStatus.ACCEPTED, DeliveryRequestStatus.IN_PROGRESS):
+            if data.outcome == DeliveryOutcome.DELIVERED_SUCCESS:
+                dcr.status = DeliveryRequestStatus.DELIVERED
+                dcr.updated_at = datetime.now(timezone.utc)
+                if dcr.transaction:
+                    dcr.transaction.status = "DELIVERED"
+                    dcr.transaction.delivery_execution_id = execution.id
+                    dcr.transaction.updated_at = datetime.now(timezone.utc)
+            else:
+                dcr.status = DeliveryRequestStatus.CANCELLED
+                dcr.updated_at = datetime.now(timezone.utc)
+                if dcr.transaction:
+                    dcr.transaction.status = "CANCELLED"
+                    dcr.transaction.delivery_execution_id = execution.id
+                    dcr.transaction.updated_at = datetime.now(timezone.utc)
 
         if data.outcome == DeliveryOutcome.DELIVERED_SUCCESS:
             assignment.status = "DELIVERED"
@@ -327,8 +1165,19 @@ class DeliveryBoyService:
         if not booking:
             raise HTTPException(status_code=404, detail="Associated booking not found")
 
+        dcr = db.query(DeliveryConfirmationRequest).filter(
+            DeliveryConfirmationRequest.assignment_id == assignment.id
+        ).order_by(DeliveryConfirmationRequest.id.desc()).first()
+
         payment = db.query(PaymentRecord).filter(PaymentRecord.booking_id == booking.id).first()
-        tx_ref = data.transaction_reference or f"TXN-{uuid.uuid4().hex[:8].upper()}"
+
+        tx_ref = data.transaction_reference
+        if not tx_ref and payment and payment.transaction_reference:
+            tx_ref = payment.transaction_reference
+        elif not tx_ref and dcr and dcr.transaction_reference:
+            tx_ref = dcr.transaction_reference
+        elif not tx_ref:
+            tx_ref = f"TXN-{uuid.uuid4().hex[:8].upper()}"
 
         if payment:
             payment.amount = data.amount
@@ -349,6 +1198,10 @@ class DeliveryBoyService:
                 collected_at=datetime.now(timezone.utc)
             )
             db.add(payment)
+
+        db.flush()
+        if dcr and dcr.transaction:
+            dcr.transaction.payment_record_id = payment.id
 
         db.commit()
         db.refresh(payment)
@@ -819,3 +1672,368 @@ class AuditorService:
     @staticmethod
     def get_audit_logs(db: Session, skip: int = 0, limit: int = 50):
         return db.query(AuditLog).order_by(AuditLog.id.desc()).offset(skip).limit(limit).all()
+
+def generate_transaction_reference() -> str:
+    # 128-bit cryptographically secure random identifier (32 hex characters)
+    # References, rather than encodes, customer, booking, delivery and payment data
+    return f"TXN-{secrets.token_hex(16).upper()}"
+
+def generate_request_id() -> str:
+    # 64-bit cryptographically secure random identifier
+    return f"REQ-{secrets.token_hex(8).upper()}"
+
+def to_confirmation_out(req: DeliveryConfirmationRequest) -> DeliveryConfirmationRequestOut:
+    return DeliveryConfirmationRequestOut(
+        id=req.id,
+        request_id=req.request_id,
+        booking_id=req.booking_id,
+        booking_number=req.booking.booking_number if req.booking else None,
+        customer_id=req.customer_id,
+        customer_name=req.customer.full_name if req.customer else None,
+        customer_phone=req.customer.phone if req.customer else None,
+        customer_address=req.customer.customer_profile.address if (req.customer and req.customer.customer_profile) else None,
+        delivery_partner_id=req.delivery_partner_id,
+        delivery_partner_name=req.delivery_partner.full_name if req.delivery_partner else None,
+        delivery_partner_phone=req.delivery_partner.phone if req.delivery_partner else None,
+        assignment_id=req.assignment_id,
+        amount_due=req.amount_due,
+        cylinder_serial=req.cylinder_serial,
+        cylinder_type=req.cylinder_type,
+        status=req.status.value if hasattr(req.status, "value") else str(req.status),
+        rejection_reason=req.rejection_reason,
+        notes=req.notes,
+        transaction_reference=req.transaction_reference,
+        created_at=req.created_at,
+        updated_at=req.updated_at
+    )
+
+def to_transaction_out(tx: DeliveryTransaction) -> DeliveryTransactionOut:
+    return DeliveryTransactionOut(
+        id=tx.id,
+        transaction_reference=tx.transaction_reference,
+        confirmation_request_id=tx.confirmation_request_id,
+        request_id=tx.confirmation_request.request_id if tx.confirmation_request else None,
+        booking_id=tx.booking_id,
+        booking_number=tx.booking.booking_number if tx.booking else None,
+        customer_id=tx.customer_id,
+        customer_name=tx.customer.full_name if tx.customer else None,
+        delivery_partner_id=tx.delivery_partner_id,
+        delivery_partner_name=tx.delivery_partner.full_name if tx.delivery_partner else None,
+        assignment_id=tx.assignment_id,
+        delivery_execution_id=tx.delivery_execution_id,
+        payment_record_id=tx.payment_record_id,
+        amount=tx.amount,
+        status=tx.status,
+        created_at=tx.created_at,
+        updated_at=tx.updated_at
+    )
+
+class DeliveryConfirmationService:
+    @staticmethod
+    def create_confirmation_request(
+        db: Session,
+        current_user: User,
+        assignment_id: Optional[int] = None,
+        data: Optional[DeliveryConfirmationCreate] = None,
+        booking_id: Optional[int] = None
+    ) -> DeliveryConfirmationRequestOut:
+        target_assignment_id = assignment_id or (data.assignment_id if data else None)
+        target_booking_id = booking_id or (data.booking_id if data else None)
+
+        query = db.query(DeliveryAssignment).filter(DeliveryAssignment.delivery_boy_id == current_user.id)
+        if target_assignment_id:
+            assignment = query.filter(DeliveryAssignment.id == target_assignment_id).first()
+        elif target_booking_id:
+            assignment = query.filter(DeliveryAssignment.booking_id == target_booking_id).first()
+        else:
+            raise HTTPException(status_code=400, detail="Either assignment_id or booking_id must be provided")
+
+        if not assignment:
+            raise HTTPException(status_code=404, detail="Assigned delivery not found for this delivery partner")
+
+        booking = db.query(Booking).filter(Booking.id == assignment.booking_id).first()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Associated booking not found")
+
+        if assignment.status in ("DELIVERED", "FAILED") or booking.status in (BookingStatus.DELIVERED, BookingStatus.CANCELLED):
+            raise HTTPException(status_code=400, detail="Cannot request delivery confirmation for a completed or cancelled booking")
+
+        existing = db.query(DeliveryConfirmationRequest).filter(
+            DeliveryConfirmationRequest.assignment_id == assignment.id
+        ).order_by(DeliveryConfirmationRequest.id.desc()).first()
+
+        if existing:
+            if existing.status == DeliveryRequestStatus.REQUESTED:
+                return to_confirmation_out(existing)
+            elif existing.status in (DeliveryRequestStatus.ACCEPTED, DeliveryRequestStatus.IN_PROGRESS):
+                return to_confirmation_out(existing)
+            elif existing.status == DeliveryRequestStatus.DELIVERED:
+                raise HTTPException(status_code=400, detail="Delivery has already been confirmed and completed")
+
+        req_id = generate_request_id()
+        while db.query(DeliveryConfirmationRequest).filter(DeliveryConfirmationRequest.request_id == req_id).first() is not None:
+            req_id = generate_request_id()
+
+        serial = (data.cylinder_serial if data and data.cylinder_serial else None)
+        if not serial and assignment.cylinder:
+            serial = assignment.cylinder.serial_number
+
+        notes = (data.notes if data and data.notes else None)
+
+        request = DeliveryConfirmationRequest(
+            request_id=req_id,
+            booking_id=booking.id,
+            customer_id=booking.customer_id,
+            delivery_partner_id=current_user.id,
+            assignment_id=assignment.id,
+            amount_due=booking.net_payable,
+            cylinder_serial=serial,
+            cylinder_type=booking.cylinder_type,
+            status=DeliveryRequestStatus.REQUESTED,
+            notes=notes,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+
+        if assignment.status == "ASSIGNED":
+            assignment.status = "OUT_FOR_DELIVERY"
+        if booking.status == BookingStatus.ASSIGNED:
+            booking.status = BookingStatus.OUT_FOR_DELIVERY
+
+        db.add(request)
+        db.commit()
+        db.refresh(request)
+        log_audit(db, current_user, "CREATE_DELIVERY_REQUEST", "DeliveryConfirmationRequest", str(request.id), f"Created delivery confirmation request {request.request_id} for booking {booking.booking_number}")
+        return to_confirmation_out(request)
+
+    @staticmethod
+    def list_customer_pending_requests(db: Session, current_user: User, skip: int = 0, limit: int = 50) -> List[DeliveryConfirmationRequestOut]:
+        requests = db.query(DeliveryConfirmationRequest).filter(
+            DeliveryConfirmationRequest.customer_id == current_user.id,
+            DeliveryConfirmationRequest.status == DeliveryRequestStatus.REQUESTED
+        ).order_by(DeliveryConfirmationRequest.id.desc()).offset(skip).limit(limit).all()
+        return [to_confirmation_out(r) for r in requests]
+
+    @staticmethod
+    def list_customer_requests(db: Session, current_user: User, status_filter: Optional[str] = None, skip: int = 0, limit: int = 50) -> List[DeliveryConfirmationRequestOut]:
+        query = db.query(DeliveryConfirmationRequest).filter(DeliveryConfirmationRequest.customer_id == current_user.id)
+        if status_filter:
+            query = query.filter(DeliveryConfirmationRequest.status == status_filter)
+        requests = query.order_by(DeliveryConfirmationRequest.id.desc()).offset(skip).limit(limit).all()
+        return [to_confirmation_out(r) for r in requests]
+
+    @staticmethod
+    def get_customer_request(db: Session, current_user: User, request_id: str) -> DeliveryConfirmationRequestOut:
+        query = db.query(DeliveryConfirmationRequest)
+        if request_id.isdigit():
+            req = query.filter((DeliveryConfirmationRequest.id == int(request_id)) | (DeliveryConfirmationRequest.request_id == request_id)).first()
+        else:
+            req = query.filter(DeliveryConfirmationRequest.request_id == request_id).first()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="Delivery confirmation request not found")
+        if req.customer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access: this request belongs to another customer")
+        return to_confirmation_out(req)
+
+    @staticmethod
+    def accept_delivery_request(db: Session, current_user: User, request_id: str) -> DeliveryConfirmationRequestOut:
+        query = db.query(DeliveryConfirmationRequest)
+        if request_id.isdigit():
+            req = query.filter((DeliveryConfirmationRequest.id == int(request_id)) | (DeliveryConfirmationRequest.request_id == request_id)).first()
+        else:
+            req = query.filter(DeliveryConfirmationRequest.request_id == request_id).first()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="Delivery confirmation request not found")
+
+        # Enforce customer ownership
+        if req.customer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access: this request belongs to another customer")
+
+        # State transition handling
+        if req.status == DeliveryRequestStatus.ACCEPTED:
+            return to_confirmation_out(req)
+
+        if req.status == DeliveryRequestStatus.REJECTED:
+            raise HTTPException(status_code=400, detail="Cannot accept a delivery request that was previously rejected")
+
+        if req.status in (DeliveryRequestStatus.DELIVERED, DeliveryRequestStatus.CANCELLED):
+            raise HTTPException(status_code=400, detail=f"Invalid state transition: request is already {req.status.value}")
+
+        if req.status != DeliveryRequestStatus.REQUESTED:
+            raise HTTPException(status_code=400, detail=f"Invalid state transition from {req.status.value} to ACCEPTED")
+
+        # Check if transaction already exists for this booking to avoid duplicate transactions
+        existing_tx = db.query(DeliveryTransaction).filter(
+            DeliveryTransaction.booking_id == req.booking_id
+        ).first()
+
+        if existing_tx:
+            tx_ref = existing_tx.transaction_reference
+            tx = existing_tx
+            tx.confirmation_request_id = req.id
+            tx.status = "ACCEPTED"
+            tx.updated_at = datetime.now(timezone.utc)
+        else:
+            tx_ref = generate_transaction_reference()
+            while db.query(DeliveryTransaction).filter(DeliveryTransaction.transaction_reference == tx_ref).first() is not None:
+                tx_ref = generate_transaction_reference()
+
+            tx = DeliveryTransaction(
+                transaction_reference=tx_ref,
+                confirmation_request_id=req.id,
+                booking_id=req.booking_id,
+                customer_id=req.customer_id,
+                delivery_partner_id=req.delivery_partner_id,
+                assignment_id=req.assignment_id,
+                amount=req.amount_due,
+                status="ACCEPTED",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            db.add(tx)
+            db.flush()
+
+        req.transaction_reference = tx_ref
+        req.status = DeliveryRequestStatus.ACCEPTED
+        req.updated_at = datetime.now(timezone.utc)
+
+        # Link to PaymentRecord (ensures payment is PENDING, not settled)
+        payment = db.query(PaymentRecord).filter(PaymentRecord.booking_id == req.booking_id).first()
+        if payment:
+            if not payment.transaction_reference:
+                payment.transaction_reference = tx_ref
+            tx.payment_record_id = payment.id
+        else:
+            payment = PaymentRecord(
+                booking_id=req.booking_id,
+                customer_id=req.customer_id,
+                delivery_boy_id=req.delivery_partner_id,
+                amount=req.amount_due,
+                payment_method=PaymentMethod.CASH,
+                payment_status=PaymentStatus.PENDING,
+                transaction_reference=tx_ref,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(payment)
+            db.flush()
+            tx.payment_record_id = payment.id
+
+        assignment = db.query(DeliveryAssignment).filter(DeliveryAssignment.id == req.assignment_id).first()
+        if assignment and assignment.status not in ("DELIVERED", "FAILED"):
+            assignment.status = "ACCEPTED"
+
+        db.commit()
+        db.refresh(req)
+        log_audit(db, current_user, "ACCEPT_DELIVERY_REQUEST", "DeliveryConfirmationRequest", str(req.id), f"Customer approved. Shared Transaction Reference: {tx_ref}")
+        return to_confirmation_out(req)
+
+    @staticmethod
+    def reject_delivery_request(db: Session, current_user: User, request_id: str, data: Optional[DeliveryRejectRequest] = None) -> DeliveryConfirmationRequestOut:
+        query = db.query(DeliveryConfirmationRequest)
+        if request_id.isdigit():
+            req = query.filter((DeliveryConfirmationRequest.id == int(request_id)) | (DeliveryConfirmationRequest.request_id == request_id)).first()
+        else:
+            req = query.filter(DeliveryConfirmationRequest.request_id == request_id).first()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="Delivery confirmation request not found")
+
+        # Enforce customer ownership
+        if req.customer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access: this request belongs to another customer")
+
+        if req.status == DeliveryRequestStatus.REJECTED:
+            return to_confirmation_out(req)
+
+        if req.status in (DeliveryRequestStatus.ACCEPTED, DeliveryRequestStatus.IN_PROGRESS, DeliveryRequestStatus.DELIVERED):
+            raise HTTPException(status_code=400, detail=f"Cannot reject a request that is already {req.status.value}")
+
+        req.status = DeliveryRequestStatus.REJECTED
+        req.rejection_reason = data.rejection_reason if data and data.rejection_reason else "Customer rejected delivery"
+        req.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(req)
+        log_audit(db, current_user, "REJECT_DELIVERY_REQUEST", "DeliveryConfirmationRequest", str(req.id), f"Customer rejected: {req.rejection_reason}")
+        return to_confirmation_out(req)
+
+    @staticmethod
+    def mark_in_progress(db: Session, current_user: User, request_id: str) -> DeliveryConfirmationRequestOut:
+        query = db.query(DeliveryConfirmationRequest)
+        if request_id.isdigit():
+            req = query.filter((DeliveryConfirmationRequest.id == int(request_id)) | (DeliveryConfirmationRequest.request_id == request_id)).first()
+        else:
+            req = query.filter(DeliveryConfirmationRequest.request_id == request_id).first()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="Delivery confirmation request not found")
+
+        if req.delivery_partner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access: request assigned to another delivery partner")
+
+        if req.status == DeliveryRequestStatus.IN_PROGRESS:
+            return to_confirmation_out(req)
+
+        if req.status != DeliveryRequestStatus.ACCEPTED:
+            raise HTTPException(status_code=400, detail=f"Cannot mark IN_PROGRESS from status {req.status.value}. Request must be ACCEPTED first.")
+
+        req.status = DeliveryRequestStatus.IN_PROGRESS
+        req.updated_at = datetime.now(timezone.utc)
+        if req.transaction:
+            req.transaction.status = "IN_PROGRESS"
+            req.transaction.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(req)
+        log_audit(db, current_user, "MARK_IN_PROGRESS", "DeliveryConfirmationRequest", str(req.id), "Delivery transitioned to IN_PROGRESS")
+        return to_confirmation_out(req)
+
+    @staticmethod
+    def get_partner_request_status(db: Session, current_user: User, assignment_id: int) -> DeliveryConfirmationRequestOut:
+        assignment = db.query(DeliveryAssignment).filter(
+            DeliveryAssignment.id == assignment_id,
+            DeliveryAssignment.delivery_boy_id == current_user.id
+        ).first()
+        if not assignment:
+            raise HTTPException(status_code=404, detail="Assigned delivery not found for this delivery partner")
+
+        req = db.query(DeliveryConfirmationRequest).filter(
+            DeliveryConfirmationRequest.assignment_id == assignment.id
+        ).order_by(DeliveryConfirmationRequest.id.desc()).first()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="No delivery confirmation request found for this assignment")
+        return to_confirmation_out(req)
+
+    @staticmethod
+    def get_partner_request(db: Session, current_user: User, request_id: str) -> DeliveryConfirmationRequestOut:
+        query = db.query(DeliveryConfirmationRequest)
+        if request_id.isdigit():
+            req = query.filter((DeliveryConfirmationRequest.id == int(request_id)) | (DeliveryConfirmationRequest.request_id == request_id)).first()
+        else:
+            req = query.filter(DeliveryConfirmationRequest.request_id == request_id).first()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="Delivery confirmation request not found")
+        if req.delivery_partner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access: request assigned to another delivery partner")
+        return to_confirmation_out(req)
+
+    @staticmethod
+    def get_transaction_by_reference(db: Session, current_user: User, transaction_reference: str) -> DeliveryTransactionOut:
+        tx = db.query(DeliveryTransaction).filter(
+            DeliveryTransaction.transaction_reference == transaction_reference
+        ).first()
+        if not tx:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        # Role-based authorization: customer or delivery partner involved in the transaction
+        if current_user.role == UserRole.CUSTOMER and tx.customer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access: customer does not own this transaction")
+        elif current_user.role == UserRole.DELIVERY_BOY and tx.delivery_partner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access: delivery partner is not assigned to this transaction")
+
+        return to_transaction_out(tx)
+

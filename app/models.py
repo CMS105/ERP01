@@ -24,6 +24,14 @@ class DeliveryOutcome(str, enum.Enum):
     CYLINDER_DEFECTIVE = "CYLINDER_DEFECTIVE"
     CANCELLED_AT_DOORSTEP = "CANCELLED_AT_DOORSTEP"
 
+class DeliveryRequestStatus(str, enum.Enum):
+    REQUESTED = "REQUESTED"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    IN_PROGRESS = "IN_PROGRESS"
+    DELIVERED = "DELIVERED"
+    CANCELLED = "CANCELLED"
+
 class PaymentStatus(str, enum.Enum):
     PENDING = "PENDING"
     COLLECTED = "COLLECTED"
@@ -182,6 +190,7 @@ class DeliveryExecution(Base):
     empty_cylinder_returned_serial = Column(String, nullable=True)
     customer_signature_data = Column(Text, nullable=True)
     failure_reason = Column(String, nullable=True)
+    transaction_reference = Column(String, nullable=True)
 
     assignment = relationship("DeliveryAssignment", back_populates="execution")
 
@@ -356,19 +365,24 @@ class SupportTicket(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticket_number = Column(String, unique=True, index=True, nullable=False)
     customer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True)
     transaction_id = Column(String, nullable=True)
     category = Column(String, nullable=False)
     description = Column(Text, nullable=False)
+    priority = Column(String(32), default="NORMAL", nullable=False)
     language = Column(String, default="English", nullable=False)
     status = Column(Enum(SupportTicketStatus), default=SupportTicketStatus.OPEN, nullable=False)
     ai_response = Column(Text, nullable=True)
     escalation_reason = Column(Text, nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+    conversation_context = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     assigned_staff_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     customer = relationship("User", foreign_keys=[customer_id])
     assigned_staff = relationship("User", foreign_keys=[assigned_staff_id])
+    booking = relationship("Booking", foreign_keys=[booking_id])
     messages = relationship("SupportMessage", back_populates="ticket")
 
 class SupportMessage(Base):
@@ -382,3 +396,85 @@ class SupportMessage(Base):
 
     ticket = relationship("SupportTicket", back_populates="messages")
     sender = relationship("User")
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(64), unique=True, index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    status = Column(String(32), default="ACTIVE", nullable=False)
+    unresolved_attempts = Column(Integer, default=0, nullable=False)
+    associated_ticket_id = Column(Integer, ForeignKey("support_tickets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    customer = relationship("User")
+    ticket = relationship("SupportTicket")
+    messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.id")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(64), ForeignKey("chat_sessions.session_id"), index=True, nullable=False)
+    sender_role = Column(String(32), nullable=False)
+    message = Column(Text, nullable=False)
+    metadata_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    session = relationship("ChatSession", back_populates="messages")
+
+class DeliveryConfirmationRequest(Base):
+    __tablename__ = "delivery_confirmation_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(String(64), unique=True, index=True, nullable=False)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    delivery_partner_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    assignment_id = Column(Integer, ForeignKey("delivery_assignments.id"), index=True, nullable=False)
+    amount_due = Column(Float, nullable=False)
+    cylinder_serial = Column(String(64), nullable=True)
+    cylinder_type = Column(String(32), default="14.2kg", nullable=False)
+    status = Column(Enum(DeliveryRequestStatus, native_enum=False), default=DeliveryRequestStatus.REQUESTED, nullable=False)
+    rejection_reason = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    transaction_reference = Column(String(128), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    booking = relationship("Booking")
+    customer = relationship("User", foreign_keys=[customer_id])
+    delivery_partner = relationship("User", foreign_keys=[delivery_partner_id])
+    assignment = relationship("DeliveryAssignment")
+    transaction = relationship("DeliveryTransaction", back_populates="confirmation_request", uselist=False)
+
+    __table_args__ = (
+        Index("idx_dcr_cust_status", "customer_id", "status"),
+    )
+
+class DeliveryTransaction(Base):
+    __tablename__ = "delivery_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_reference = Column(String(128), unique=True, index=True, nullable=False)
+    confirmation_request_id = Column(Integer, ForeignKey("delivery_confirmation_requests.id"), index=True, nullable=False)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    delivery_partner_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    assignment_id = Column(Integer, ForeignKey("delivery_assignments.id"), index=True, nullable=False)
+    delivery_execution_id = Column(Integer, ForeignKey("delivery_executions.id"), nullable=True)
+    payment_record_id = Column(Integer, ForeignKey("payment_records.id"), nullable=True)
+    amount = Column(Float, default=0.0, nullable=False)
+    status = Column(String(32), default="ACCEPTED", nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    confirmation_request = relationship("DeliveryConfirmationRequest", back_populates="transaction")
+    booking = relationship("Booking")
+    customer = relationship("User", foreign_keys=[customer_id])
+    delivery_partner = relationship("User", foreign_keys=[delivery_partner_id])
+    assignment = relationship("DeliveryAssignment")
+    delivery_execution = relationship("DeliveryExecution")
+    payment_record = relationship("PaymentRecord")

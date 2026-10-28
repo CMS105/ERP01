@@ -11,9 +11,10 @@ from app.schemas import (
     CylinderInventoryCreate, CylinderInventoryUpdate, CylinderInventoryOut,
     BookingOut, BookingAssignRequest, DeliveryAssignmentOut,
     FinancialCorrectionRequest, FinancialCorrectionOut,
-    VehicleRecommendationRequest, VehicleRecommendationOut
+    VehicleRecommendationRequest, VehicleRecommendationOut,
+    SupportTicketOut, TicketUpdateAdmin, TicketAssignAdmin
 )
-from app.services import AdminService
+from app.services import AdminService, SupportTicketService
 from app.logistics import VehicleAllocationService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin Web Dashboard"])
@@ -144,3 +145,53 @@ def get_logistics_routes_summary(
     current_user: User = Depends(require_admin)
 ):
     return VehicleAllocationService.get_route_summaries(db)
+
+# --- Admin Support Ticket & Complaint Resolution Workflows ---
+
+@router.get("/tickets", response_model=List[SupportTicketOut])
+def list_admin_tickets(
+    status: Optional[str] = Query(None, description="Filter by ticket status"),
+    priority: Optional[str] = Query(None, description="Filter by priority: CRITICAL, HIGH, NORMAL"),
+    category: Optional[str] = Query(None, description="Filter by category substring"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    return SupportTicketService.list_admin_tickets(
+        db, status=status, priority=priority, category=category, skip=skip, limit=limit
+    )
+
+@router.get("/tickets/queue/pending", response_model=Dict[str, Any])
+def get_admin_pending_ticket_queue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    return SupportTicketService.get_admin_queue_summary(db)
+
+@router.get("/tickets/{ticket_id}", response_model=SupportTicketOut)
+def get_admin_ticket_details(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    return SupportTicketService.get_admin_ticket(db, ticket_id)
+
+@router.put("/tickets/{ticket_id}", response_model=SupportTicketOut)
+def update_admin_ticket(
+    ticket_id: int,
+    payload: TicketUpdateAdmin,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    return SupportTicketService.update_admin_ticket(db, current_user, ticket_id, payload)
+
+@router.post("/tickets/{ticket_id}/assign", response_model=SupportTicketOut)
+def assign_admin_ticket(
+    ticket_id: int,
+    payload: TicketAssignAdmin,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    return SupportTicketService.assign_admin_ticket(db, current_user, ticket_id, payload)
+

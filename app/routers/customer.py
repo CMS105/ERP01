@@ -9,9 +9,10 @@ from app.schemas import (
     CustomerProfileOut, CustomerProfileUpdate,
     BookingCreate, BookingOut,
     DeliveryAssignmentOut, PaymentRecordOut,
-    SupportTicketOut, SupportTicketCreate, SupportTicketEscalate
+    SupportTicketOut, SupportTicketCreate, SupportTicketEscalate,
+    DeliveryConfirmationRequestOut, DeliveryRejectRequest, DeliveryTransactionOut
 )
-from app.services import CustomerService, SupportTicketService
+from app.services import CustomerService, SupportTicketService, DeliveryConfirmationService
 
 router = APIRouter(prefix="/api/v1/customer", tags=["Customer App"])
 
@@ -77,6 +78,7 @@ def list_customer_payments(
     return CustomerService.get_payments(db, current_user, skip=skip, limit=limit)
 
 @router.post("/support/tickets", response_model=SupportTicketOut, status_code=status.HTTP_201_CREATED)
+@router.post("/tickets", response_model=SupportTicketOut, status_code=status.HTTP_201_CREATED)
 def raise_support_ticket(
     payload: SupportTicketCreate,
     db: Session = Depends(get_db),
@@ -85,13 +87,26 @@ def raise_support_ticket(
     return SupportTicketService.create_ticket(db, current_user, payload)
 
 @router.get("/support/tickets", response_model=List[SupportTicketOut])
+@router.get("/tickets", response_model=List[SupportTicketOut])
 def get_support_tickets(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_customer)
 ):
-    return SupportTicketService.get_tickets(db, current_user)
+    return SupportTicketService.get_tickets(db, current_user, skip=skip, limit=limit)
+
+@router.get("/support/tickets/{ticket_id}", response_model=SupportTicketOut)
+@router.get("/tickets/{ticket_id}", response_model=SupportTicketOut)
+def get_support_ticket_by_id(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer)
+):
+    return SupportTicketService.get_ticket_by_id(db, current_user, ticket_id)
 
 @router.post("/support/tickets/{ticket_id}/escalate", response_model=SupportTicketOut)
+@router.post("/tickets/{ticket_id}/escalate", response_model=SupportTicketOut)
 def escalate_support_ticket(
     ticket_id: int,
     payload: SupportTicketEscalate,
@@ -99,3 +114,68 @@ def escalate_support_ticket(
     current_user: User = Depends(require_customer)
 ):
     return SupportTicketService.escalate_ticket(db, current_user, ticket_id, payload)
+
+@router.get("/delivery-requests/pending", response_model=List[DeliveryConfirmationRequestOut])
+def list_pending_delivery_requests(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer)
+):
+    return DeliveryConfirmationService.list_customer_pending_requests(
+        db, current_user, skip=skip, limit=limit
+    )
+
+@router.get("/delivery-requests", response_model=List[DeliveryConfirmationRequestOut])
+def list_customer_delivery_requests(
+    status: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer)
+):
+    return DeliveryConfirmationService.list_customer_requests(
+        db, current_user, status_filter=status, skip=skip, limit=limit
+    )
+
+@router.get("/delivery-requests/{request_id}", response_model=DeliveryConfirmationRequestOut)
+def get_customer_delivery_request(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer)
+):
+    return DeliveryConfirmationService.get_customer_request(
+        db, current_user, request_id=request_id
+    )
+
+@router.post("/delivery-requests/{request_id}/accept", response_model=DeliveryConfirmationRequestOut)
+def accept_customer_delivery_request(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer)
+):
+    return DeliveryConfirmationService.accept_delivery_request(
+        db, current_user, request_id=request_id
+    )
+
+@router.post("/delivery-requests/{request_id}/reject", response_model=DeliveryConfirmationRequestOut)
+def reject_customer_delivery_request(
+    request_id: str,
+    payload: Optional[DeliveryRejectRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer)
+):
+    return DeliveryConfirmationService.reject_delivery_request(
+        db, current_user, request_id=request_id, data=payload
+    )
+
+@router.get("/transactions/{transaction_reference}", response_model=DeliveryTransactionOut)
+def get_customer_delivery_transaction(
+    transaction_reference: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer)
+):
+    return DeliveryConfirmationService.get_transaction_by_reference(
+        db, current_user, transaction_reference=transaction_reference
+    )
+

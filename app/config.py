@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "student-secret-key-hackathon-2026"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    CHATBOT_MAX_UNRESOLVED_ATTEMPTS: int = 3
 
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 40

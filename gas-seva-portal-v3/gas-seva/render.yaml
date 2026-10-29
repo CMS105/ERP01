@@ -26,3 +26,5 @@ services:
         value: https://lpg-erp-backend.onrender.com
       - key: FASTAPI_AUDITOR_EMAIL
         sync: false
+      - key: FASTAPI_ADMIN_EMAIL
+        sync: false

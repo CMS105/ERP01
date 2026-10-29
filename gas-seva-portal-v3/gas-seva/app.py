@@ -23,6 +23,7 @@ MAX_TRIES, WINDOW, LOCK = 5, 300, 300
 TABLES = ["customers", "bookings", "deliveries", "payments", "subsidy", "cylinder_movements"]
 FASTAPI_BASE_URL = os.environ.get("FASTAPI_BASE_URL", "https://lpg-erp-backend.onrender.com").rstrip("/")
 FASTAPI_AUDITOR_EMAIL = os.environ.get("FASTAPI_AUDITOR_EMAIL", "").strip()
+FASTAPI_ADMIN_EMAIL = os.environ.get("FASTAPI_ADMIN_EMAIL", "").strip()
 BACKEND_TOKENS = {}  # token stays server-side; only a random session handle is stored in Flask cookie
 
 
@@ -130,20 +131,22 @@ def login():
         return jsonify(error="locked", wait=int(until - now)), 429
     if now - first > WINDOW:
         n, first = 0, now
-    if r == "auditor":
-        if not FASTAPI_AUDITOR_EMAIL:
-            return jsonify(error="backend_not_configured", message="Set FASTAPI_AUDITOR_EMAIL in Render Environment"), 503
+    if r in ("auditor", "admin"):
+        email = FASTAPI_AUDITOR_EMAIL if r == "auditor" else FASTAPI_ADMIN_EMAIL
+        expected_role = "AUDITOR" if r == "auditor" else "ADMIN"
+        if not email:
+            return jsonify(error="backend_not_configured", message="Set FASTAPI_" + expected_role + "_EMAIL in Render Environment"), 503
         status_code, data = backend_request("/api/v1/auth/login", method="POST", payload={
-            "email": FASTAPI_AUDITOR_EMAIL,
+            "email": email,
             "password": str(j.get("password", ""))
         })
-        if status_code == 200 and data.get("access_token") and str(data.get("role", "")).upper() == "AUDITOR":
+        if status_code == 200 and data.get("access_token") and str(data.get("role", "")).upper() == expected_role:
             FAILS.pop(ip, None)
             session.clear()
-            session["role"] = "auditor"
+            session["role"] = r
             session["backend_session_id"] = secrets.token_urlsafe(32)
             BACKEND_TOKENS[session["backend_session_id"]] = data["access_token"]
-            return jsonify(role="auditor")
+            return jsonify(role=r)
         if status_code in (401, 403):
             return jsonify(error="bad"), status_code
         return jsonify(error="backend_unavailable", message=data.get("detail", "FastAPI login failed")), 502

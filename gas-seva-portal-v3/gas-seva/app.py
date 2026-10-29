@@ -1,4 +1,4 @@
-import os, csv, sqlite3, random, hmac, time, json, urllib.request, urllib.error
+import os, csv, sqlite3, random, hmac, time, json, secrets, urllib.request, urllib.error
 from datetime import date, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, session, send_from_directory, g
@@ -23,6 +23,7 @@ MAX_TRIES, WINDOW, LOCK = 5, 300, 300
 TABLES = ["customers", "bookings", "deliveries", "payments", "subsidy", "cylinder_movements"]
 FASTAPI_BASE_URL = os.environ.get("FASTAPI_BASE_URL", "https://lpg-erp-backend.onrender.com").rstrip("/")
 FASTAPI_AUDITOR_EMAIL = os.environ.get("FASTAPI_AUDITOR_EMAIL", "").strip()
+BACKEND_TOKENS = {}  # token stays server-side; only a random session handle is stored in Flask cookie
 
 
 def backend_request(path, method="GET", payload=None, token=None):
@@ -140,8 +141,8 @@ def login():
             FAILS.pop(ip, None)
             session.clear()
             session["role"] = "auditor"
-            session["fastapi_access_token"] = data["access_token"]
-            session["fastapi_user_name"] = data.get("full_name", "Auditor")
+            session["backend_session_id"] = secrets.token_urlsafe(32)
+            BACKEND_TOKENS[session["backend_session_id"]] = data["access_token"]
             return jsonify(role="auditor")
         if status_code in (401, 403):
             return jsonify(error="bad"), status_code
@@ -159,6 +160,9 @@ def login():
 
 @app.post("/api/logout")
 def logout():
+    sid = session.get("backend_session_id")
+    if sid:
+        BACKEND_TOKENS.pop(sid, None)
     session.clear()
     return jsonify(ok=1)
 
@@ -231,7 +235,7 @@ CHECKS = {
 @app.get("/api/audit")
 @need("auditor")
 def audit():
-    token = session.get("fastapi_access_token")
+    token = BACKEND_TOKENS.get(session.get("backend_session_id"))
     if not token:
         return jsonify(error="backend_login_required"), 401
     findings_status, findings = backend_request("/api/v1/reconciliation/findings?page=1&limit=100", token=token)

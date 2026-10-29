@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: gas-seva-portal
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --bind 0.0.0.0:$PORT
+    disk:
+      name: portal-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: SECRET_KEY
+        generateValue: true
+      - key: STAFF_PASSWORD
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: AUDITOR_PASSWORD
+        sync: false
+      - key: DEV_PASSWORD
+        sync: false

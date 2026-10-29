@@ -22,3 +22,7 @@ services:
         sync: false
       - key: DEV_PASSWORD
         sync: false
+      - key: FASTAPI_BASE_URL
+        value: https://lpg-erp-backend.onrender.com
+      - key: FASTAPI_AUDITOR_EMAIL
+        sync: false

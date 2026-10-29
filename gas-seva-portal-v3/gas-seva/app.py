@@ -1,4 +1,4 @@
-import os, csv, sqlite3, random, hmac, time
+import os, csv, sqlite3, random, hmac, time, json, urllib.request, urllib.error
 from datetime import date, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, session, send_from_directory, g
@@ -21,6 +21,31 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
 FAILS = {}  # ip -> (failed_count, window_start, locked_until)
 MAX_TRIES, WINDOW, LOCK = 5, 300, 300
 TABLES = ["customers", "bookings", "deliveries", "payments", "subsidy", "cylinder_movements"]
+FASTAPI_BASE_URL = os.environ.get("FASTAPI_BASE_URL", "https://lpg-erp-backend.onrender.com").rstrip("/")
+FASTAPI_AUDITOR_EMAIL = os.environ.get("FASTAPI_AUDITOR_EMAIL", "").strip()
+
+
+def backend_request(path, method="GET", payload=None, token=None):
+    """Call FastAPI server-side so JWTs stay out of browser code."""
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Accept": "application/json"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(FASTAPI_BASE_URL + path, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        try:
+            data = json.loads(exc.read().decode("utf-8") or "{}")
+        except Exception:
+            data = {"detail": "Backend request failed"}
+        return exc.code, data
+    except Exception:
+        return 502, {"detail": "FastAPI backend is unavailable"}
+
 TYPES = ["payment_missing", "duplicate_charge", "subsidy_missing", "empty_not_returned", "wrong_amount"]
 
 
@@ -104,8 +129,26 @@ def login():
         return jsonify(error="locked", wait=int(until - now)), 429
     if now - first > WINDOW:
         n, first = 0, now
+    if r == "auditor":
+        if not FASTAPI_AUDITOR_EMAIL:
+            return jsonify(error="backend_not_configured", message="Set FASTAPI_AUDITOR_EMAIL in Render Environment"), 503
+        status_code, data = backend_request("/api/v1/auth/login", method="POST", payload={
+            "email": FASTAPI_AUDITOR_EMAIL,
+            "password": str(j.get("password", ""))
+        })
+        if status_code == 200 and data.get("access_token") and str(data.get("role", "")).upper() == "AUDITOR":
+            FAILS.pop(ip, None)
+            session.clear()
+            session["role"] = "auditor"
+            session["fastapi_access_token"] = data["access_token"]
+            session["fastapi_user_name"] = data.get("full_name", "Auditor")
+            return jsonify(role="auditor")
+        if status_code in (401, 403):
+            return jsonify(error="bad"), status_code
+        return jsonify(error="backend_unavailable", message=data.get("detail", "FastAPI login failed")), 502
     if r in PASS and hmac.compare_digest(str(j.get("password", "")), PASS[r]):
         FAILS.pop(ip, None)
+        session.clear()
         session["role"] = r
         return jsonify(role=r)
     n += 1
@@ -188,11 +231,16 @@ CHECKS = {
 @app.get("/api/audit")
 @need("auditor")
 def audit():
-    out = []
-    for k, sql in CHECKS.items():
-        ids = [r["id"] for r in rows(sql)]
-        out.append(dict(key=k, count=len(ids), samples=ids[:8]))
-    return jsonify(checks=out, totals={t: one(f"SELECT COUNT(*) FROM {t}") for t in TABLES})
+    token = session.get("fastapi_access_token")
+    if not token:
+        return jsonify(error="backend_login_required"), 401
+    findings_status, findings = backend_request("/api/v1/reconciliation/findings?page=1&limit=100", token=token)
+    summary_status, summary = backend_request("/api/v1/reconciliation/summary", token=token)
+    if findings_status != 200:
+        return jsonify(error="backend_audit_failed", detail=findings.get("detail", "Could not load reconciliation findings")), findings_status
+    if summary_status != 200:
+        return jsonify(error="backend_audit_failed", detail=summary.get("detail", "Could not load reconciliation summary")), summary_status
+    return jsonify(findings=findings.get("items", []), total=findings.get("total", 0), summary=summary)
 
 
 @app.route("/api/changes", methods=["GET", "POST"])

@@ -69,11 +69,20 @@ async reports(){
   document.querySelectorAll("[data-n]").forEach(e=>count(e,+e.dataset.n));
 },
 async audit(){
-  $("#view").innerHTML=`<button class="btn g noprint" id="ga">${t("gen")}</button><div id="ar" style="margin-top:22px"></div>`;
-  $("#ga").onclick=async()=>{const d=await api("/api/audit");
-    $("#ar").innerHTML=`<div class="card"><h2 style="margin-top:0">${t("audit")} · ${new Date().toLocaleString("en-IN")}</h2><table>${d.checks.map(c=>`<tr><td>${c.key.replace(/_/g," ")}</td><td><b class="cnt ${c.count?"bad":"ok"}">${c.count}</b></td><td class="lbl">${c.samples.join(", ")}</td></tr>`).join("")}</table>
-    <p class="lbl">${Object.entries(d.totals).map(([k,v])=>`${k}: ${v.toLocaleString("en-IN")}`).join(" · ")}</p></div><button class="btn noprint" style="margin-top:18px" onclick="print()">${t("print")}</button>`;
-    gsap.from("#ar .card",{y:30,opacity:0,duration:.6})};
+  $("#view").innerHTML=\`<button class="btn g noprint" id="ga">\${t("gen")}</button><div id="ar" style="margin-top:22px"></div>\`;
+  $("#ga").onclick=async()=>{try{const d=await api("/api/audit");
+    const sm=d.summary||{};
+    $("#ar").innerHTML=\`<div class="card"><h2 style="margin-top:0">\${t("audit")} · \${new Date().toLocaleString("en-IN")}</h2>
+    <div class="grid">
+      <div class="card stat"><div class="num">\${sm.total_runs??0}</div><div class="lbl">Reconciliation runs</div></div>
+      <div class="card stat"><div class="num">\${sm.total_findings??d.total??0}</div><div class="lbl">Total findings</div></div>
+      <div class="card stat"><div class="num">\${sm.pending_findings??0}</div><div class="lbl">Pending review</div></div>
+    </div>
+    <p class="lbl">Last run: \${sm.last_run_at||"Not run yet"} · Status: \${sm.last_run_status||"—"}</p>
+    <div style="overflow:auto"><table><thead><tr><th>Finding</th><th>Rule</th><th>Severity</th><th>Table / Record</th><th>Status</th><th>Explanation</th></tr></thead><tbody>
+    \${(d.findings||[]).map(f=>\`<tr><td>\${f.finding_id}</td><td>\${f.rule_code}</td><td><b class="cnt \${String(f.severity).toLowerCase()==="critical"||String(f.severity).toLowerCase()==="high"?"bad":"ok"}">\${f.severity}</b></td><td>\${f.affected_table} / \${f.affected_record_id}</td><td>\${f.review_status}</td><td>\${f.explanation}</td></tr>\`).join("")||\`<tr><td colspan="6">No reconciliation findings returned.</td></tr>\`}
+    </tbody></table></div><p class="lbl">Showing \${(d.findings||[]).length} of \${d.total||0} findings. This view is read-only.</p></div><button class="btn noprint" style="margin-top:18px" onclick="print()">\${t("print")}</button>\`;
+    gsap.from("#ar .card",{y:30,opacity:0,duration:.6})}catch(e){toast(e.message||e.detail||"Could not load backend audit data")}};
 },
 async changes(){
   const d=await api("/api/changes");

@@ -61,6 +61,48 @@ class CustomerViewModel(private val repository: LpgRepository) : ViewModel() {
     val pendingSyncCount: StateFlow<Int> = repository.getPendingSyncCountFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    val incomingHandshakeRequest = MutableStateFlow<com.example.appforlpg.domain.model.BluetoothPayload?>(null)
+
+    fun startBluetoothListener() {
+        // Active Bluetooth Delivery mode listener
+        val sampleIncoming = com.example.appforlpg.domain.model.BluetoothPayload(
+            payloadId = java.util.UUID.randomUUID().toString(),
+            transferType = "DELIVERY_MANIFEST",
+            bookingId = "BKG-2025-001",
+            deliveryId = "DEL-2025-8801",
+            consumerNumber = "LPG-889911",
+            customerName = "Ramesh Sharma",
+            cylinderQuantity = 1,
+            amount = 950.0,
+            paymentMethod = "CASH",
+            timestamp = java.text.SimpleDateFormat("yyyy-MM-dd hh:mm a", java.util.Locale.getDefault()).format(java.util.Date()),
+            deliveryBoyName = "Vikram Singh (STAFF-701)",
+            deliveryBoyId = "4",
+            operationId = java.util.UUID.randomUUID().toString(),
+            signature = "TXN-A82B3C4D"
+        )
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1200)
+            incomingHandshakeRequest.value = sampleIncoming
+        }
+    }
+
+    fun approveHandshake(payload: com.example.appforlpg.domain.model.BluetoothPayload) {
+        val confToken = "CONF-TXN-${(10000..99999).random()}"
+        viewModelScope.launch {
+            repository.processReceivedBluetoothPayload(payload.copy(signature = confToken))
+            incomingHandshakeRequest.value = null
+            _uiState.value = _uiState.value.copy(
+                successMessage = "Bluetooth Handover Approved! Tokens Exchanged (Manifest: ${payload.signature} ↔ Confirmation: $confToken)."
+            )
+        }
+    }
+
+    fun rejectHandshake() {
+        incomingHandshakeRequest.value = null
+        _uiState.value = _uiState.value.copy(errorMessage = "Bluetooth delivery handover request rejected.")
+    }
+
     private val _uiState = MutableStateFlow(CustomerUiState())
     val uiState: StateFlow<CustomerUiState> = _uiState.asStateFlow()
 

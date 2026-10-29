@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -86,9 +87,50 @@ fun CustomerScreen(
     var quantity by remember { mutableIntStateOf(1) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var showVoiceTourGuide by remember { mutableStateOf(false) }
+    var isBluetoothDeliveryActive by remember { mutableStateOf(false) }
+
+    val incomingHandshake by customerViewModel.incomingHandshakeRequest.collectAsState()
 
     val cylinderPrice = if (selectedCylinderType.contains("19 kg")) 1850.0 else 950.0
     val totalAmount = cylinderPrice * quantity
+
+    incomingHandshake?.let { payload ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { customerViewModel.rejectHandshake() },
+            title = { Text(if (isKannada) "ಆಗಮಿಸುವ ಬ್ಲೂಟೂತ್ ವಿಲೇವಾರಿ ವಿನಂತಿ" else "Incoming Bluetooth Handover Request") },
+            text = {
+                Column {
+                    Text(text = "Delivery Partner: ${payload.deliveryBoyName}", fontWeight = FontWeight.Bold)
+                    Text(text = "Booking Ref: ${payload.bookingId}")
+                    Text(text = "Cylinder: 14.2 kg Domestic × ${payload.cylinderQuantity}")
+                    Text(text = "Amount Payable: ₹${payload.amount.toInt()} (${payload.paymentMethod})")
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Manifest Token: ${payload.signature}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { customerViewModel.approveHandshake(payload) }) {
+                    Text(if (isKannada) "ಹಸ್ತಾಂತರ ದೃಢೀಕರಿಸಿ & ಟೋಕನ್ ವಿನಿಮಯ" else "Confirm Handover & Exchange Token")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { customerViewModel.rejectHandshake() }) {
+                    Text(if (isKannada) "ತಿರಸ್ಕರಿಸಿ" else "Reject")
+                }
+            }
+        )
+    }
 
     if (showVoiceTourGuide) {
         com.example.appforlpg.ui.VoiceTourGuideOverlay(
@@ -243,6 +285,74 @@ fun CustomerScreen(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
+                    }
+                }
+            }
+
+            // Turn On Bluetooth Delivery Switch Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isBluetoothDeliveryActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isBluetoothDeliveryActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.VolumeUp,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column {
+                                Text(
+                                    text = if (isKannada) "ಬ್ಲೂಟೂತ್ ವಿಲೇವಾರಿ ಮೋಡ್" else "Turn On Bluetooth Delivery",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = if (isBluetoothDeliveryActive) {
+                                        if (isKannada) "🟢 ಸಕ್ರಿಯವಾಗಿದೆ - ವಿಲೇವಾರಿ ಪಾಲುದಾರರ ಸಂಪರ್ಕಕ್ಕೆ ಕಾಯಲಾಗುತ್ತಿದೆ" else "🟢 Active — Ready for Delivery Partner Connection"
+                                    } else {
+                                        if (isKannada) "🔴 ನಿಷ್ಕ್ರಿಯವಾಗಿದೆ - ಸಕ್ರಿಯಗೊಳಿಸಲು ಸ್ವಿಚ್ ಒತ್ತಿ" else "🔴 Inactive — Toggle switch to enable BLE Handshake"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = isBluetoothDeliveryActive,
+                            onCheckedChange = { active ->
+                                isBluetoothDeliveryActive = active
+                                if (active) {
+                                    customerViewModel.startBluetoothListener()
+                                }
+                            }
+                        )
                     }
                 }
             }

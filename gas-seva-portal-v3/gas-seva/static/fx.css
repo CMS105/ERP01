@@ -1,0 +1,115 @@
+/* ===== Gas Seva – visual layer (loader, background, transitions, micro-interactions) ===== */
+:root{--glass:rgba(255,239,214,.72)}
+html{scroll-behavior:smooth}
+.wrap{position:relative}
+
+/* ---------- Living background ---------- */
+#bg{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+#bg .b{position:absolute;width:62vmax;height:62vmax;border-radius:50%;will-change:transform}
+#bg .b1{left:-22vmax;top:-26vmax;background:radial-gradient(circle,rgba(255,153,51,.42),transparent 64%);animation:d1 26s ease-in-out infinite alternate}
+#bg .b2{right:-24vmax;bottom:-28vmax;background:radial-gradient(circle,rgba(19,136,8,.26),transparent 64%);animation:d2 32s ease-in-out infinite alternate}
+#bg .b3{right:8vmax;top:-20vmax;width:42vmax;height:42vmax;background:radial-gradient(circle,rgba(156,43,59,.18),transparent 64%);animation:d1 38s ease-in-out infinite alternate-reverse}
+#bg .dots{position:absolute;inset:0;background:radial-gradient(rgba(107,29,42,.2) 1.6px,transparent 1.9px) 0 0/34px 34px;-webkit-mask-image:radial-gradient(ellipse 70% 60% at 85% 0,#000,transparent);mask-image:radial-gradient(ellipse 70% 60% at 85% 0,#000,transparent)}
+#bg .md{position:absolute;right:-18vmin;top:-18vmin;width:84vmin;height:84vmin;opacity:.14;animation:spin 180s linear infinite}
+#bg .sp{position:absolute;left:0;top:0;width:560px;height:560px;transform:translate(calc(var(--mx,50vw) - 280px),calc(var(--my,30vh) - 280px));transition:transform .45s ease-out;background:radial-gradient(circle,rgba(255,179,71,.24),transparent 62%)}
+#bg .em i{position:absolute;bottom:-20px;border-radius:50%;background:radial-gradient(circle,#FFB347,rgba(255,122,26,0) 70%);opacity:0;animation:rise linear infinite}
+@keyframes d1{to{transform:translate(8vmax,6vmax) scale(1.12)}}
+@keyframes d2{to{transform:translate(-9vmax,-5vmax) scale(1.1)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes rise{0%{transform:translate(0,0);opacity:0}15%{opacity:.7}100%{transform:translate(var(--dx),-108vh);opacity:0}}
+
+/* ---------- Top flag bar doubles as loading bar ---------- */
+.flag{position:sticky;top:0;z-index:70;overflow:hidden}
+.flag::after{content:"";position:absolute;top:0;bottom:0;width:35%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.9),transparent);transform:translateX(-100%);opacity:0}
+body.busy .flag::after{opacity:1;animation:sweep .9s linear infinite}
+@keyframes sweep{to{transform:translateX(300%)}}
+
+/* ---------- Custom loading page ---------- */
+#ld{position:fixed;inset:0;z-index:80;display:grid;place-items:center;align-content:center;gap:26px;background:var(--bg)}
+#ld .cyl{width:104px;overflow:visible;filter:drop-shadow(8px 10px 14px var(--lo))}
+#ld .bd{fill:var(--hi)}#ld .ol{fill:none;stroke:var(--mr);stroke-width:4}
+#ld .lv{fill:#FF8A24;animation:fillup 1.7s cubic-bezier(.4,0,.2,1) forwards}
+#ld.full .lv{animation:none;transform:translateY(0);transition:transform .45s ease-out}
+#ld .vl{fill:var(--mr)}
+.fl{fill:#FF7A1A;transform-box:fill-box;transform-origin:50% 100%;animation:flick .45s ease-in-out infinite alternate}
+@keyframes flick{from{transform:scale(.88,.95) rotate(-4deg)}to{transform:scale(1.1,1.12) rotate(4deg)}}
+@keyframes fillup{from{transform:translateY(92px)}to{transform:translateY(14px)}}
+#ld .ldt{display:grid;text-align:center;font-size:1.7rem;font-weight:700;color:var(--ink);height:2.2rem}
+#ld .ldt span{grid-area:1/1;opacity:0;animation:cyc 4.5s infinite}
+#ld .ldt span:nth-child(2){animation-delay:1.5s;font-family:'Baloo 2'}
+#ld .ldt span:nth-child(3){animation-delay:3s;font-family:'Baloo Tamma 2'}
+@keyframes cyc{0%,4%{opacity:0;transform:translateY(8px)}12%,30%{opacity:1;transform:none}38%,100%{opacity:0;transform:translateY(-8px)}}
+#ld .ldbar{width:150px;height:6px;border-radius:6px;box-shadow:inset 2px 2px 5px var(--lo),inset -2px -2px 5px var(--hi);overflow:hidden}
+#ld .ldbar i{display:block;height:100%;width:100%;border-radius:6px;background:linear-gradient(90deg,#FF9933,#fff,#138808);transform-origin:left;animation:bar 1.7s cubic-bezier(.4,0,.2,1) forwards}
+#ld.full .ldbar i{animation:none}
+@keyframes bar{from{transform:scaleX(.05)}to{transform:scaleX(.88)}}
+
+/* ---------- Tricolour page curtain ---------- */
+#cv{position:fixed;inset:0;z-index:90;display:grid;grid-template-rows:repeat(3,1fr);pointer-events:none}
+#cv.on{pointer-events:auto}
+#cv i{transform:scaleX(0)}
+.ghost{position:absolute;z-index:3;pointer-events:none}
+
+/* ---------- Brand ---------- */
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:40px;flex:none;overflow:visible;filter:drop-shadow(3px 4px 5px var(--lo))}
+
+/* ---------- Glass neumorphic cards ---------- */
+.card{background:var(--glass);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+
+/* ---------- Proximity-grow buttons (vars driven by fx.js) ---------- */
+.btn,.pill,.role,.fab,.btn:active,.fab:active{transform:perspective(800px) translate3d(var(--tx,0px),var(--ty,0px),0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(calc(var(--s,1) * var(--p,1)));transition:box-shadow .25s,filter .25s,color .25s;will-change:transform}
+.btn:active,.pill:active,.fab:active{--p:.94}
+.btn,.pill,.role{position:relative;overflow:hidden}
+.btn:hover,.pill:hover{filter:brightness(1.06)}
+.btn::before{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.5) 50%,transparent 65%);transform:translateX(-120%);transition:transform .6s}
+.btn:hover::before{transform:translateX(120%)}
+.btn.busy{pointer-events:none;opacity:.88}
+.btn.busy::after{content:"";display:inline-block;width:.9em;height:.9em;margin-left:.6em;vertical-align:-.12em;border:3px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+.rp{position:absolute;border-radius:50%;background:rgba(255,255,255,.55);transform:scale(0);animation:rp .65s ease-out forwards;pointer-events:none}
+.pill .rp,.role .rp{background:rgba(255,153,51,.3)}
+@keyframes rp{to{transform:scale(1);opacity:0}}
+
+/* ---------- Role cards ---------- */
+.role{display:flex;flex-direction:column;align-items:center;gap:12px}
+.ri .ic{width:46px;height:46px;color:var(--mr);transition:transform .4s cubic-bezier(.3,1.6,.5,1),color .3s}
+.role:hover .ic{transform:translateY(-4px) rotate(-6deg)}
+.role.on .ic{color:var(--sf);transform:scale(1.12)}
+.role.on::after{content:"✓";position:absolute;top:12px;right:14px;width:26px;height:26px;border-radius:50%;background:var(--gr);color:#fff;font-size:15px;display:grid;place-items:center;animation:pop .4s cubic-bezier(.3,1.7,.5,1)}
+@keyframes pop{from{transform:scale(0)}}
+#pw{background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239C2B3B' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='5' y='11' width='14' height='9' rx='2.5'/%3E%3Cpath d='M8 11V8a4 4 0 018 0v3'/%3E%3C/svg%3E") no-repeat 14px center/20px;padding-left:2.8em}
+
+/* ---------- Stats, bars, items, empty ---------- */
+.stat{overflow:hidden}
+.si{display:grid;place-items:center;width:44px;height:44px;margin-bottom:12px;border-radius:15px;color:var(--mr);box-shadow:inset 3px 3px 7px var(--lo),inset -3px -3px 7px var(--hi)}
+.si .ic{width:22px;height:22px}
+.stat:hover .si{color:var(--sf)}
+.bars i{position:relative;transition:filter .2s,background .2s}
+.bars i:hover{background:linear-gradient(#2DB81F,#0B6A04);filter:saturate(1.2)}
+.bars i::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:50%;transform:translate(-50%,6px);white-space:nowrap;background:var(--mr);color:#fff;font-size:.8rem;padding:.15em .7em;border-radius:12px;opacity:0;pointer-events:none;transition:.2s;z-index:4}
+.bars i:hover::after{opacity:1;transform:translate(-50%,0)}
+.item{position:relative;padding-left:34px;transition:box-shadow .3s}
+.item::before{content:"";position:absolute;left:15px;top:16px;bottom:16px;width:5px;border-radius:5px;background:linear-gradient(var(--sf),var(--gr))}
+.empty{display:flex;align-items:center;justify-content:center;gap:14px;padding:34px;opacity:.85}
+.empty .ic{width:38px;height:38px;color:var(--mr)}
+.cnt{display:inline-block;min-width:2.2em;text-align:center;border-radius:12px;padding:0 .5em}
+.cnt.bad{background:#F5C9CF;color:var(--mr)}.cnt.ok{background:#CDEBC8;color:#0B6A04}
+tr:hover td{background:rgba(255,153,51,.1)}th{border-bottom:2px solid rgba(156,43,59,.2)}
+.sk{height:92px;margin-bottom:18px;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.6) 50%,transparent 70%) 0 0/220% 100%,var(--glass);animation:sh 1.2s linear infinite}
+@keyframes sh{to{background-position:-220% 0,0 0}}
+
+/* ---------- Toasts ---------- */
+.toasts{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:grid;gap:8px;z-index:95;justify-items:center}
+.toasts .toast{position:static;transform:none;display:flex;align-items:center;gap:.6em}
+.toast.ok{background:var(--gr)}
+.ti{display:grid;place-items:center;width:1.4em;height:1.4em;border-radius:50%;background:rgba(255,255,255,.25);font-size:.85em}
+
+/* ---------- Voice button rings + burst ---------- */
+.fab.on{animation:none}
+.fab.on::before,.fab.on::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid var(--sf);animation:ring 1.6s ease-out infinite;pointer-events:none}
+.fab.on::after{animation-delay:.8s}
+@keyframes ring{to{transform:scale(1.9);opacity:0}}
+.bp{position:fixed;width:9px;height:9px;margin:-4px;border-radius:50%;z-index:96;pointer-events:none}
+
+@media print{#bg,#ld,#cv,.ghost,.toasts{display:none!important}.card{background:#fff;backdrop-filter:none}}
+@media(prefers-reduced-motion:reduce){#bg *,#ld *,.flag::after,.fab::before,.fab::after{animation:none!important}.btn,.pill,.role,.fab{transform:none!important}}

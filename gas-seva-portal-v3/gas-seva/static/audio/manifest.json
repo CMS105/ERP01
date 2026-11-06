@@ -1,0 +1,80 @@
+{
+  "en": {
+    "login": {
+      "file": "en/login.mp3",
+      "text": "Welcome to Gas Seva Portal. Choose your role: counter staff, admin, auditor, or developer. Then type your password and press Enter."
+    },
+    "staff_issues": {
+      "file": "en/staff_issues.mp3",
+      "text": "These are the issues raised by customers. For each issue, press Solve if you can fix it, or Send to admin if you cannot. Open the Reports tab to see daily, weekly and monthly numbers."
+    },
+    "admin_issues": {
+      "file": "en/admin_issues.mp3",
+      "text": "These are the issues sent to you by counter staff. Press Solve once an issue is fixed. If a record in the database needs correction, use the Data change requests tab."
+    },
+    "reports": {
+      "file": "en/reports.mp3",
+      "text": "This is your report. Choose Daily, Weekly or Monthly. You can see bookings, deliveries, unpaid deliveries, subsidy, and cash and UPI payments."
+    },
+    "audit": {
+      "file": "en/audit.mp3",
+      "text": "Press Generate audit report to check the data for problems such as duplicate bookings, missing payments and wrong amounts. Then press Print to save it as a PDF."
+    },
+    "admin_changes": {
+      "file": "en/admin_changes.mp3",
+      "text": "To correct data, choose the table, enter the record ID, the field, the new value and the reason, then send the request. The developer will make the change. Only the developer can edit the database."
+    }
+  },
+  "hi": {
+    "login": {
+      "file": "hi/login.mp3",
+      "text": "गैस सेवा पोर्टल में आपका स्वागत है। अपनी भूमिका चुनें: काउंटर कर्मचारी, प्रशासक, लेखा परीक्षक या डेवलपर। फिर पासवर्ड लिखें और एंटर दबाएँ।"
+    },
+    "staff_issues": {
+      "file": "hi/staff_issues.mp3",
+      "text": "ये ग्राहकों द्वारा दर्ज की गई समस्याएँ हैं। हर समस्या के लिए, यदि आप हल कर सकते हैं तो हल करें दबाएँ, नहीं तो प्रशासक को भेजें दबाएँ। दैनिक, साप्ताहिक और मासिक आँकड़ों के लिए रिपोर्ट टैब खोलें।"
+    },
+    "admin_issues": {
+      "file": "hi/admin_issues.mp3",
+      "text": "ये वे समस्याएँ हैं जो काउंटर कर्मचारियों ने आपको भेजी हैं। समस्या ठीक होने पर हल करें दबाएँ। यदि डेटाबेस में किसी रिकॉर्ड को सुधारना हो तो डेटा बदलाव अनुरोध टैब का उपयोग करें।"
+    },
+    "reports": {
+      "file": "hi/reports.mp3",
+      "text": "यह आपकी रिपोर्ट है। दैनिक, साप्ताहिक या मासिक चुनें। यहाँ बुकिंग, डिलीवरी, बिना भुगतान डिलीवरी, सब्सिडी, तथा नकद और यूपीआई भुगतान दिखते हैं।"
+    },
+    "audit": {
+      "file": "hi/audit.mp3",
+      "text": "दोहरी बुकिंग, छूटे भुगतान और गलत राशि जैसी गड़बड़ियाँ जाँचने के लिए ऑडिट रिपोर्ट बनाएँ दबाएँ। फिर पीडीएफ के रूप में सहेजने के लिए प्रिंट दबाएँ।"
+    },
+    "admin_changes": {
+      "file": "hi/admin_changes.mp3",
+      "text": "डेटा सुधारने के लिए तालिका चुनें, रिकॉर्ड आईडी, फ़ील्ड, नया मान और कारण लिखें, फिर अनुरोध भेजें। बदलाव डेवलपर करेगा। केवल डेवलपर ही डेटाबेस बदल सकता है।"
+    }
+  },
+  "kn": {
+    "login": {
+      "file": "kn/login.mp3",
+      "text": "ಗ್ಯಾಸ್ ಸೇವಾ ಪೋರ್ಟಲ್‌ಗೆ ಸ್ವಾಗತ. ನಿಮ್ಮ ಪಾತ್ರವನ್ನು ಆಯ್ಕೆ ಮಾಡಿ: ಕೌಂಟರ್ ಸಿಬ್ಬಂದಿ, ನಿರ್ವಾಹಕ, ಲೆಕ್ಕ ಪರಿಶೋಧಕ ಅಥವಾ ಡೆವಲಪರ್. ನಂತರ ಪಾಸ್‌ವರ್ಡ್ ಟೈಪ್ ಮಾಡಿ ಮತ್ತು ಎಂಟರ್ ಒತ್ತಿ."
+    },
+    "staff_issues": {
+      "file": "kn/staff_issues.mp3",
+      "text": "ಇವು ಗ್ರಾಹಕರು ದಾಖಲಿಸಿದ ಸಮಸ್ಯೆಗಳು. ಪ್ರತಿ ಸಮಸ್ಯೆಗೆ, ನೀವು ಪರಿಹರಿಸಬಹುದಾದರೆ ಪರಿಹರಿಸಿ ಒತ್ತಿ, ಇಲ್ಲವಾದರೆ ನಿರ್ವಾಹಕರಿಗೆ ಕಳುಹಿಸಿ ಒತ್ತಿ. ದೈನಂದಿನ, ಸಾಪ್ತಾಹಿಕ ಮತ್ತು ಮಾಸಿಕ ಅಂಕಿಅಂಶಗಳಿಗೆ ವರದಿಗಳ ಟ್ಯಾಬ್ ತೆರೆಯಿರಿ."
+    },
+    "admin_issues": {
+      "file": "kn/admin_issues.mp3",
+      "text": "ಇವು ಕೌಂಟರ್ ಸಿಬ್ಬಂದಿ ನಿಮಗೆ ಕಳುಹಿಸಿದ ಸಮಸ್ಯೆಗಳು. ಸಮಸ್ಯೆ ಸರಿಯಾದ ನಂತರ ಪರಿಹರಿಸಿ ಒತ್ತಿ. ಡೇಟಾಬೇಸ್‌ನ ದಾಖಲೆಯನ್ನು ಸರಿಪಡಿಸಬೇಕಾದರೆ ಡೇಟಾ ಬದಲಾವಣೆ ವಿನಂತಿ ಟ್ಯಾಬ್ ಬಳಸಿ."
+    },
+    "reports": {
+      "file": "kn/reports.mp3",
+      "text": "ಇದು ನಿಮ್ಮ ವರದಿ. ದೈನಂದಿನ, ಸಾಪ್ತಾಹಿಕ ಅಥವಾ ಮಾಸಿಕ ಆಯ್ಕೆ ಮಾಡಿ. ಇಲ್ಲಿ ಬುಕಿಂಗ್‌ಗಳು, ವಿತರಣೆಗಳು, ಪಾವತಿಯಾಗದ ವಿತರಣೆಗಳು, ಸಬ್ಸಿಡಿ, ಹಾಗೂ ನಗದು ಮತ್ತು ಯುಪಿಐ ಪಾವತಿಗಳು ಕಾಣುತ್ತವೆ."
+    },
+    "audit": {
+      "file": "kn/audit.mp3",
+      "text": "ಎರಡು ಬಾರಿ ಬುಕಿಂಗ್, ಬಿಟ್ಟುಹೋದ ಪಾವತಿ ಮತ್ತು ತಪ್ಪು ಮೊತ್ತದಂತಹ ದೋಷಗಳನ್ನು ಪರಿಶೀಲಿಸಲು ಲೆಕ್ಕಪರಿಶೋಧನಾ ವರದಿ ರಚಿಸಿ ಒತ್ತಿ. ನಂತರ ಪಿಡಿಎಫ್ ಆಗಿ ಉಳಿಸಲು ಮುದ್ರಿಸಿ ಒತ್ತಿ."
+    },
+    "admin_changes": {
+      "file": "kn/admin_changes.mp3",
+      "text": "ಡೇಟಾ ಸರಿಪಡಿಸಲು ಕೋಷ್ಟಕ ಆಯ್ಕೆ ಮಾಡಿ, ದಾಖಲೆ ಐಡಿ, ಕ್ಷೇತ್ರ, ಹೊಸ ಮೌಲ್ಯ ಮತ್ತು ಕಾರಣ ಬರೆದು ವಿನಂತಿ ಕಳುಹಿಸಿ. ಬದಲಾವಣೆಯನ್ನು ಡೆವಲಪರ್ ಮಾಡುತ್ತಾರೆ. ಡೇಟಾಬೇಸ್ ಬದಲಿಸಲು ಡೆವಲಪರ್‌ಗೆ ಮಾತ್ರ ಅವಕಾಶ."
+    }
+  }
+}

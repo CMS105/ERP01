@@ -135,7 +135,6 @@ class CustomerViewModel(private val repository: LpgRepository) : ViewModel() {
                 quantity = quantity
             )
             _uiState.value = _uiState.value.copy(isLoading = false)
-            result.onSuccess { booking ->
                 val statusText = if (booking.isServerConfirmed) "Server Confirmed" else "Locally Pending Sync"
                 _uiState.value = _uiState.value.copy(
                     successMessage = "Booking Ref: ${booking.bookingId} submitted successfully ($statusText).",
@@ -166,9 +165,7 @@ class CustomerViewModel(private val repository: LpgRepository) : ViewModel() {
         viewModelScope.launch {
             val result = repository.raiseIssue(user.id, category, description, transactionId, language)
             _uiState.value = _uiState.value.copy(isLoading = false)
-            result.onSuccess {
-                _uiState.value = _uiState.value.copy(successMessage = "Issue submitted successfully. Our AI Assistant has replied!")
-            }.onFailure { ex ->
+            result.onFailure { ex ->
                 _uiState.value = _uiState.value.copy(errorMessage = ex.message ?: "Failed to raise issue")
             }
         }
@@ -180,9 +177,8 @@ class CustomerViewModel(private val repository: LpgRepository) : ViewModel() {
         viewModelScope.launch {
             val result = repository.escalateIssue(ticketId, user.id, reason)
             _uiState.value = _uiState.value.copy(isLoading = false)
-            result.onSuccess {
                 _uiState.value = _uiState.value.copy(successMessage = "Issue escalated to human staff.")
-            }.onFailure { ex ->
+            result.onFailure { ex ->
                 _uiState.value = _uiState.value.copy(errorMessage = ex.message ?: "Failed to escalate")
             }
         }

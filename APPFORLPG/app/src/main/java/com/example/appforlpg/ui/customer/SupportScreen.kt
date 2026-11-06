@@ -61,7 +61,7 @@ fun SupportScreen(
 
     // Sync ticket responses from backend / Room DB into chatList
     LaunchedEffect(tickets) {
-        tickets.forEach { ticket ->
+        tickets.reversed().forEach { ticket ->
             val userMsgId = "usr-${ticket.id}"
             if (chatList.none { it.id == userMsgId }) {
                 chatList.add(ChatMessage(id = userMsgId, text = "${ticket.category}: ${ticket.description}", isUser = true))

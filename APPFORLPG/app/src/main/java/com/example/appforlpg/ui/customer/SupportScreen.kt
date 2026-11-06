@@ -135,33 +135,49 @@ fun SupportScreen(
             }
         }
 
+        val listState = rememberLazyListState()
+
         // Active Chat Messages Display (UserBubbles & AiBubbles)
-        chatList.forEach { msg ->
-            if (msg.isUser) {
-                UserBubble(text = msg.text)
-            } else {
-                AiBubble(
-                    text = msg.text,
-                    isKannada = isKannada,
-                    ticketId = msg.ticketId,
-                    status = msg.status,
-                    onEscalate = onEscalate
-                )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(chatList) { msg ->
+                if (msg.isUser) {
+                    UserBubble(text = msg.text)
+                } else {
+                    AiBubble(
+                        text = msg.text,
+                        isKannada = isKannada,
+                        ticketId = msg.ticketId,
+                        status = msg.status,
+                        onEscalate = onEscalate
+                    )
+                }
+            }
+
+            if (isThinking) {
+                item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isKannada) "ಎಐ ಉತ್ತರ ತಯಾರಿಸುತ್ತಿದೆ..." else "Gemini AI is generating response...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
 
-        if (isThinking) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(8.dp)
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isKannada) "ಎಐ ಉತ್ತರ ತಯಾರಿಸುತ್ತಿದೆ..." else "Gemini AI is generating response...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+        LaunchedEffect(chatList.size, isThinking) {
+            if (chatList.isNotEmpty()) {
+                listState.animateScrollToItem(chatList.size - 1)
             }
         }
 
@@ -248,31 +264,7 @@ fun SupportScreen(
 
                             onSubmit("General Query", textToSend)
 
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(1200)
-                                isThinking = false
-
-                                val aiAnswer = when {
-                                    textToSend.contains("delivery", ignoreCase = true) || textToSend.contains("ವಿಲೇವಾರಿ") -> {
-                                        if (isKannada) "ನಿಮ್ಮ ಸಿಲಿಂಡರ್ ವಿಲೇವಾರಿ ಪ್ರಕ್ರಿಯೆಯಲ್ಲಿದೆ. ವಿಲೇವಾರಿ ಪಾಲುದಾರರು ಇಂದು ತಲುಪಿಸಲಿದ್ದಾರೆ."
-                                        else "Your refill cylinder is assigned and currently out for delivery. Our partner will deliver it today."
-                                    }
-                                    textToSend.contains("pay", ignoreCase = true) || textToSend.contains("ಪಾವತಿ") -> {
-                                        if (isKannada) "ನೀವು ಯುಪಿಐ, ಕ್ಯೂಆರ್ ಕೋಡ್ ಅಥವಾ ವಿಲೇವಾರಿ ವೇಳೆಯಲ್ಲಿ ನಗದು ರೂಪದಲ್ಲಿ ಪಾವತಿಸಬಹುದು."
-                                        else "You can complete your payment via UPI QR code or cash at the time of delivery."
-                                    }
-                                    textToSend.contains("leak", ignoreCase = true) || textToSend.contains("ಸೋರಿಕೆ") -> {
-                                        if (isKannada) "ಅನಿಲ ಸೋರಿಕೆಯಾದರೆ ತಕ್ಷಣ ರೆಗ್ಯುಲೇಟರ್ ಬಂದ್ ಮಾಡಿ, ಕಿಟಕಿಗಳನ್ನು ತೆರೆಯಿರಿ ಮತ್ತು 1906 ಗೆ ಕರೆ ಮಾಡಿ."
-                                        else "In case of gas leakage, immediately close the cylinder regulator, open all windows, avoid electrical switches, and call emergency 1906."
-                                    }
-                                    else -> {
-                                        if (isKannada) "ಧನ್ಯವಾದಗಳು! ನಿಮ್ಮ ಪ್ರಶ್ನೆಯನ್ನು ಸ್ವೀಕರಿಸಲಾಗಿದೆ. ಹೆಚ್ಚುವರಿ ಸಹಾಯ ಬೇಕಾದಲ್ಲಿ ಮಾನವ ಸಿಬ್ಬಂದಿಗೆ ವಹಿಸಿ."
-                                        else "Thank you for reaching out! Your query has been logged and answered by Gemini AI. Tap Escalate if you need further help."
-                                    }
-                                }
-
-                                chatList.add(ChatMessage(id = UUID.randomUUID().toString(), text = aiAnswer, isUser = false))
-                            }
+                            
                         }
                     },
                     modifier = Modifier

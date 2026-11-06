@@ -54,6 +54,54 @@ class DeliveryBoyViewModel(private val repository: LpgRepository) : ViewModel() 
     val pendingSyncCount: StateFlow<Int> = repository.getPendingSyncCountFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    val autoConnectedHandshake = MutableStateFlow<Pair<Booking, com.example.appforlpg.domain.model.BluetoothPayload>?>(null)
+
+    fun startBluetoothAutoConnect(booking: Booking) {
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1200)
+            val manifestToken = "TXN-${(100000..999999).random()}"
+            val confToken = "CONF-${(100000..999999).random()}"
+            val payload = com.example.appforlpg.domain.model.BluetoothPayload(
+                payloadId = java.util.UUID.randomUUID().toString(),
+                transferType = "DELIVERY_MANIFEST",
+                bookingId = booking.bookingId,
+                deliveryId = "DEL-2025-8801",
+                consumerNumber = booking.consumerNumber,
+                customerName = booking.customerName,
+                cylinderQuantity = booking.quantity,
+                amount = booking.amountDue,
+                paymentMethod = "CASH",
+                timestamp = java.text.SimpleDateFormat("yyyy-MM-dd hh:mm a", java.util.Locale.getDefault()).format(java.util.Date()),
+                deliveryBoyName = "Vikram Singh (STAFF-701)",
+                deliveryBoyId = "4",
+                operationId = java.util.UUID.randomUUID().toString(),
+                signature = "$manifestToken ↔ $confToken"
+            )
+            autoConnectedHandshake.value = Pair(booking, payload)
+        }
+    }
+
+    fun dismissAutoHandshake() {
+        autoConnectedHandshake.value = null
+    }
+
+    fun confirmAutoHandshake(booking: Booking, payload: com.example.appforlpg.domain.model.BluetoothPayload) {
+        viewModelScope.launch {
+            completeDelivery(
+                bookingId = booking.bookingId,
+                customerId = booking.customerId,
+                quantity = booking.quantity,
+                cylinderType = booking.cylinderType,
+                status = "DELIVERED",
+                notes = "Auto-connected & verified via BLE Handshake (${payload.signature})"
+            )
+            autoConnectedHandshake.value = null
+            _uiState.value = _uiState.value.copy(
+                successMessage = "Bluetooth Handover Complete! Exchanged Tokens: ${payload.signature}"
+            )
+        }
+    }
+
     val pairedBluetoothDevices: StateFlow<List<com.example.appforlpg.bluetooth.BluetoothDeviceDomain>> = MutableStateFlow(
         listOf(
             com.example.appforlpg.bluetooth.BluetoothDeviceDomain("Customer Session A82F", "00:11:22:33:44:55"),

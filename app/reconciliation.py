@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
+from app.reconciliation_sources import live_rule_delivery_no_payment, live_rule_amount_mismatch
 from app.models import (
     CustomerRecord, BookingRecord, DeliveryRecord, PaymentItem,
     CylinderMovement, SubsidyRecord, ReconciliationRun, ReconciliationFinding,
@@ -185,8 +186,11 @@ RULES = [
     ("AMOUNT_MISMATCH", rule_amount_mismatch),
     ("MISSING_EMPTY_RETURN", rule_missing_empty_return),
     ("SUBSIDY_INELIGIBLE", rule_subsidy_ineligible),
+    ("LIVE_DELIVERY_NO_PAYMENT", live_rule_delivery_no_payment),
+    ("LIVE_AMOUNT_MISMATCH", live_rule_amount_mismatch),
 ]
 
+from sqlalchemy import update
 def run_reconciliation(db: Session, triggered_by_user_id: Optional[int] = None) -> ReconciliationRun:
     running_job = db.query(ReconciliationRun).filter(ReconciliationRun.status == "RUNNING").first()
     if running_job:
@@ -228,7 +232,7 @@ def run_reconciliation(db: Session, triggered_by_user_id: Optional[int] = None) 
 
         existing_active = {
             (f.rule_code, f.affected_record_id)
-            for f in db.query(ReconciliationFinding.rule_code, ReconciliationFinding.affected_record_id).all()
+            for f in db.query(ReconciliationFinding.rule_code, ReconciliationFinding.affected_record_id).filter(ReconciliationFinding.review_status.in_(["PENDING", "REVIEWED"])).all()
         }
 
         new_findings = []
@@ -254,6 +258,37 @@ def run_reconciliation(db: Session, triggered_by_user_id: Optional[int] = None) 
             db.bulk_save_objects(new_findings)
             db.commit()
 
+
+        # Auto-resolve findings that are no longer detected
+        active_findings = db.query(ReconciliationFinding).filter(
+            ReconciliationFinding.review_status.in_(["PENDING", "REVIEWED"])
+        ).all()
+
+        detected_keys = {(d["rule_code"], d["affected_record_id"]) for d in all_detected}
+        executed_rules = set(rule_counts.keys())
+
+        resolved_count = 0
+        for finding in active_findings:
+            if finding.rule_code in executed_rules:
+                if (finding.rule_code, finding.affected_record_id) not in detected_keys:
+                    finding.review_status = "RESOLVED"
+                    finding.review_reason = "Auto-resolved: Issue no longer detected in reconciliation run."
+                    finding.reviewed_at = datetime.now(timezone.utc)
+                    resolved_count += 1
+
+                    audit = AuditLog(
+                        user_id=triggered_by_user_id,
+                        user_role="ADMIN" if triggered_by_user_id else "SYSTEM",
+                        action="AUTO_RESOLVE_FINDING",
+                        resource_type="ReconciliationFinding",
+                        resource_id=finding.finding_id,
+                        details="Finding auto-resolved as it was no longer detected.",
+                        timestamp=datetime.now(timezone.utc)
+                    )
+                    db.add(audit)
+
+        if resolved_count > 0:
+            db.commit()
         run_entry.status = "COMPLETED"
         run_entry.completed_at = datetime.now(timezone.utc)
         run_entry.records_examined = total_examined
@@ -262,6 +297,7 @@ def run_reconciliation(db: Session, triggered_by_user_id: Optional[int] = None) 
             "total_detected": len(all_detected),
             "new_stored": len(new_findings),
             "by_rule": rule_counts
+            , "auto_resolved": resolved_count
         })
         db.commit()
         db.refresh(run_entry)

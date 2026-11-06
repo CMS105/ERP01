@@ -265,13 +265,27 @@ def run_reconciliation(db: Session, triggered_by_user_id: Optional[int] = None) 
         ).all()
 
         detected_keys = {(d["rule_code"], d["affected_record_id"]) for d in all_detected}
+        executed_rules = set(rule_counts.keys())
+
         resolved_count = 0
         for finding in active_findings:
-            if (finding.rule_code, finding.affected_record_id) not in detected_keys:
-                finding.review_status = "RESOLVED"
-                finding.review_reason = "Auto-resolved: Issue no longer detected in reconciliation run."
-                finding.reviewed_at = datetime.now(timezone.utc)
-                resolved_count += 1
+            if finding.rule_code in executed_rules:
+                if (finding.rule_code, finding.affected_record_id) not in detected_keys:
+                    finding.review_status = "RESOLVED"
+                    finding.review_reason = "Auto-resolved: Issue no longer detected in reconciliation run."
+                    finding.reviewed_at = datetime.now(timezone.utc)
+                    resolved_count += 1
+
+                    audit = AuditLog(
+                        user_id=triggered_by_user_id,
+                        user_role="ADMIN" if triggered_by_user_id else "SYSTEM",
+                        action="AUTO_RESOLVE_FINDING",
+                        resource_type="ReconciliationFinding",
+                        resource_id=finding.finding_id,
+                        details="Finding auto-resolved as it was no longer detected.",
+                        timestamp=datetime.now(timezone.utc)
+                    )
+                    db.add(audit)
 
         if resolved_count > 0:
             db.commit()

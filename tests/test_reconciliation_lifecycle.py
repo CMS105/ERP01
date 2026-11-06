@@ -1,6 +1,6 @@
 import pytest
 import json
-from app.models import BookingRecord, ReconciliationFinding, ReconciliationRun
+from app.models import BookingRecord, ReconciliationFinding, ReconciliationRun, AuditLog
 from app.reconciliation import run_reconciliation
 
 def test_auto_resolve_finding(db_session):
@@ -33,6 +33,12 @@ def test_auto_resolve_finding(db_session):
     summary = json.loads(run2.summary_json)
     assert summary["auto_resolved"] == 1
 
+    # Verify audit log was created
+    audit = db_session.query(AuditLog).filter_by(action="AUTO_RESOLVE_FINDING").first()
+    assert audit is not None
+    assert audit.resource_id == finding.finding_id
+    assert audit.user_role == "SYSTEM"
+
 def test_dismissed_finding_recurrence(db_session):
     # Setup initial error condition
     b1 = BookingRecord(booking_id="B001", customer_id="C001", booking_date="2026-09-01")
@@ -53,7 +59,7 @@ def test_dismissed_finding_recurrence(db_session):
     assert run2.findings_count == 1
 
     # A NEW finding should be created since the old one is DISMISSED (not existing_active)
-    findings = db_session.query(ReconciliationFinding).filter_by(rule_code="DUPLICATE_BOOKING").all()
+    findings = db_session.query(ReconciliationFinding).filter_by(rule_code="DUPLICATE_BOOKING").order_by(ReconciliationFinding.id.asc()).all()
     assert len(findings) == 2
 
     assert findings[0].review_status == "DISMISSED"

@@ -4,7 +4,9 @@ from app.reconciliation_sources import live_rule_delivery_no_payment, live_rule_
 import uuid
 from datetime import datetime, timezone
 
-def test_live_rule_delivery_no_payment(db_session, test_user):
+def test_live_rule_delivery_no_payment(db_session, seed_data):
+    test_user = seed_data["customer"]
+
     # Create successful delivery with NO payment
     b1 = Booking(
         booking_number=f"BK-{uuid.uuid4().hex[:8]}",
@@ -88,7 +90,9 @@ def test_live_rule_delivery_no_payment(db_session, test_user):
     assert f"EXEC-{de2.id}" not in exec_ids
     assert f"EXEC-{de3.id}" not in exec_ids
 
-def test_live_rule_amount_mismatch(db_session, test_user):
+def test_live_rule_amount_mismatch(db_session, seed_data):
+    test_user = seed_data["customer"]
+
     # Match amount
     b1 = Booking(
         booking_number=f"BK-{uuid.uuid4().hex[:8]}",
@@ -147,7 +151,7 @@ def test_live_rule_amount_mismatch(db_session, test_user):
     db_session.add(pr2)
     db_session.commit()
 
-    # Pending payment (should NOT be flagged even if amount differs temporarily or whatever, wait, our rule requires COLLECTED)
+    # Pending payment (should NOT be flagged even if amount differs)
     b3 = Booking(
         booking_number=f"BK-{uuid.uuid4().hex[:8]}",
         customer_id=test_user.id,

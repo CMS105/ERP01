@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
+from app.reconciliation_sources import live_rule_delivery_no_payment, live_rule_amount_mismatch
 from app.models import (
     CustomerRecord, BookingRecord, DeliveryRecord, PaymentItem,
     CylinderMovement, SubsidyRecord, ReconciliationRun, ReconciliationFinding,
@@ -185,6 +186,8 @@ RULES = [
     ("AMOUNT_MISMATCH", rule_amount_mismatch),
     ("MISSING_EMPTY_RETURN", rule_missing_empty_return),
     ("SUBSIDY_INELIGIBLE", rule_subsidy_ineligible),
+    ("LIVE_DELIVERY_NO_PAYMENT", live_rule_delivery_no_payment),
+    ("LIVE_AMOUNT_MISMATCH", live_rule_amount_mismatch),
 ]
 
 def run_reconciliation(db: Session, triggered_by_user_id: Optional[int] = None) -> ReconciliationRun:

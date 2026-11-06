@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
@@ -45,6 +46,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -82,6 +85,58 @@ fun DeliveryBoyScreen(
     var activeDeliveryForCompletion by remember { mutableStateOf<Booking?>(null) }
     var activeDeliveryForPayment by remember { mutableStateOf<Booking?>(null) }
     var activeDeliveryForBluetooth by remember { mutableStateOf<Booking?>(null) }
+    var isBluetoothDeliveryActive by remember { mutableStateOf(false) }
+
+    val autoHandshake by deliveryBoyViewModel.autoConnectedHandshake.collectAsState()
+
+    autoHandshake?.let { (booking, payload) ->
+        AlertDialog(
+            onDismissRequest = { deliveryBoyViewModel.dismissAutoHandshake() },
+            title = { Text(if (isKannada) "🟢 ಸಕ್ರಿಯ ಆರ್ಡರ್ ಬ್ಲೂಟೂತ್ ಮೂಲಕ ಸಂಪರ್ಕಗೊಂಡಿದೆ" else "🟢 Active Cylinder Order Connected via BLE") },
+            text = {
+                Column {
+                    Text(text = "Customer: ${booking.customerName} (${booking.consumerNumber})", fontWeight = FontWeight.Bold)
+                    Text(text = "Phone: ${booking.customerPhone}")
+                    Text(text = "Address: ${booking.deliveryAddress}")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = "Booking Ref: ${booking.bookingId}", fontWeight = FontWeight.SemiBold)
+                    Text(text = "Cylinder: ${booking.cylinderType} × ${booking.quantity}")
+                    Text(text = "Amount Due: ₹${booking.amountDue.toInt()}")
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "Exchanged Tokens (Manifest ↔ Confirmation):",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = payload.signature,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { deliveryBoyViewModel.confirmAutoHandshake(booking, payload) }) {
+                    Text(if (isKannada) "ವಿಲೇವಾರಿ ಪೂರ್ಣಗೊಳಿಸಿ & ಟೋಕನ್ ಕಳುಹಿಸಿ" else "Complete Delivery & Save Exchanged Tokens")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { deliveryBoyViewModel.dismissAutoHandshake() }) {
+                    Text(if (isKannada) "ರದ್ದುಮಾಡಿ" else "Cancel")
+                }
+            }
+        )
+    }
 
     val filteredBookings = remember(assignedBookings, uiState.searchQuery, uiState.statusFilter) {
         assignedBookings.filter { booking ->
@@ -256,6 +311,77 @@ fun DeliveryBoyScreen(
                                 Text(if (isKannada) "ಸಿಂಕ್ ಮಾಡಿ" else "Sync Now", fontSize = 13.sp)
                             }
                         }
+                    }
+                }
+            }
+
+            // Turn On Bluetooth Delivery Switch Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isBluetoothDeliveryActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isBluetoothDeliveryActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.BluetoothConnected,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column {
+                                Text(
+                                    text = if (isKannada) "ಬ್ಲೂಟೂತ್ ವಿಲೇವಾರಿ ಮೋಡ್" else "Turn On Bluetooth Delivery",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = if (isBluetoothDeliveryActive) {
+                                        if (isKannada) "🟢 ಸಕ್ರಿಯವಾಗಿದೆ - ಸಮೀಪದ ಗ್ರಾಹಕರ ಸಕ್ರಿಯ ಆರ್ಡರ್ ಹುಡುಕಲಾಗುತ್ತಿದೆ" else "🟢 Active — Scanning for Nearby Active Customer Orders"
+                                    } else {
+                                        if (isKannada) "🔴 ನಿಷ್ಕ್ರಿಯವಾಗಿದೆ - ಸಕ್ರಿಯಗೊಳಿಸಲು ಸ್ವಿಚ್ ಒತ್ತಿ" else "🔴 Inactive — Toggle switch to connect nearby customer"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = isBluetoothDeliveryActive,
+                            onCheckedChange = { active ->
+                                isBluetoothDeliveryActive = active
+                                if (active) {
+                                    val activeOrder = filteredBookings.firstOrNull { it.deliveryStatus != "DELIVERED" } ?: assignedBookings.firstOrNull()
+                                    if (activeOrder != null) {
+                                        deliveryBoyViewModel.startBluetoothAutoConnect(activeOrder)
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
             }
